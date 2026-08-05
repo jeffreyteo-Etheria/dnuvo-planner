@@ -41,6 +41,7 @@ body{font-family:var(--s);background:var(--paper);color:var(--ink);
 button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
 input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--violet);outline-offset:2px}
+[hidden]{display:none!important}
 
 /* numbers read as instrument output */
 .n,.tb td.n,.tb th.n{font-family:var(--m);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
