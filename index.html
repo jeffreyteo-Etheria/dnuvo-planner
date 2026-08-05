@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>d.nuvo — Launch Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ═══════════ GATE ═══════════ -->
+<div class="gate" id="gate">
+  <div class="gate-card">
+    <div class="gate-mark"><svg class="logo" viewBox="0 0 132 34" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="d.nuvo">
+  <path d="M18.6 4v26h-3.4v-3.2c-1.5 2.3-3.9 3.6-7 3.6-5.4 0-9.2-4.3-9.2-10.4S2.8 9.6 8.2 9.6c3.1 0 5.5 1.3 7 3.5V4h3.4Zm-3.3 16c0-4.2-2.5-7.2-6.3-7.2S2.7 15.8 2.7 20s2.5 7.2 6.3 7.2 6.3-3 6.3-7.2Z" fill="currentColor"/>
+  <circle cx="25.4" cy="28" r="2.4" fill="var(--violet-mid,#8B82D4)"/>
+  <path d="M35 30V10h3.3v3c1.4-2.3 3.6-3.4 6.4-3.4 4.6 0 7.4 3 7.4 7.9V30h-3.4V18.2c0-3.4-1.8-5.4-4.9-5.4-3.3 0-5.4 2.3-5.4 5.9V30H35ZM75.4 10v20h-3.3v-3c-1.4 2.3-3.6 3.4-6.4 3.4-4.6 0-7.4-3-7.4-7.9V10h3.4v11.8c0 3.4 1.8 5.4 4.9 5.4 3.3 0 5.4-2.3 5.4-5.9V10h3.4ZM79.2 10h3.7l6 16 6-16h3.6l-7.8 20h-3.7l-7.8-20ZM110.9 30.4c-5.9 0-10.2-4.4-10.2-10.4s4.3-10.4 10.2-10.4S121.1 14 121.1 20s-4.3 10.4-10.2 10.4Zm0-3.2c3.9 0 6.7-3 6.7-7.2s-2.8-7.2-6.7-7.2-6.7 3-6.7 7.2 2.8 7.2 6.7 7.2Z" fill="currentColor"/>
+</svg></div>
+    <h1>Launch Console</h1>
+    <p class="gate-sub">Singapore · 6-month launch · 3,000 units</p>
+
+    <div class="gate-roles">
+      <button class="gate-role" data-role="team">
+        <span class="gr-tag">Team</span>
+        <b>Team member</b>
+        <span class="gr-desc">KOL workspace, calendar and read-only plan. Request changes for approval.</span>
+        <span class="gr-go">Enter →</span>
+      </button>
+      <button class="gate-role" data-role="admin">
+        <span class="gr-tag gr-tag-a">Admin</span>
+        <b>Administrator</b>
+        <span class="gr-desc">Full access. Set strategy, costs, budgets. Approve team requests.</span>
+        <span class="gr-go">Passcode required →</span>
+      </button>
+    </div>
+
+    <div class="gate-pw" id="gatePw">
+      <label>Admin passcode</label>
+      <div class="pw-row">
+        <input type="password" id="pwInput" inputmode="numeric" maxlength="12" placeholder="••••" autocomplete="off">
+        <button id="pwGo">Unlock</button>
+      </div>
+      <p class="pw-err" id="pwErr"></p>
+      <button class="pw-back" id="pwBack">← Back</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ APP ═══════════ -->
+<div class="app" id="app" hidden>
+
+  <!-- SIDEBAR -->
+  <aside class="side">
+    <div class="side-mark">
+      <span class="sm-logo"><svg class="logo" viewBox="0 0 132 34" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="d.nuvo">
+  <path d="M18.6 4v26h-3.4v-3.2c-1.5 2.3-3.9 3.6-7 3.6-5.4 0-9.2-4.3-9.2-10.4S2.8 9.6 8.2 9.6c3.1 0 5.5 1.3 7 3.5V4h3.4Zm-3.3 16c0-4.2-2.5-7.2-6.3-7.2S2.7 15.8 2.7 20s2.5 7.2 6.3 7.2 6.3-3 6.3-7.2Z" fill="currentColor"/>
+  <circle cx="25.4" cy="28" r="2.4" fill="var(--violet-mid,#8B82D4)"/>
+  <path d="M35 30V10h3.3v3c1.4-2.3 3.6-3.4 6.4-3.4 4.6 0 7.4 3 7.4 7.9V30h-3.4V18.2c0-3.4-1.8-5.4-4.9-5.4-3.3 0-5.4 2.3-5.4 5.9V30H35ZM75.4 10v20h-3.3v-3c-1.4 2.3-3.6 3.4-6.4 3.4-4.6 0-7.4-3-7.4-7.9V10h3.4v11.8c0 3.4 1.8 5.4 4.9 5.4 3.3 0 5.4-2.3 5.4-5.9V10h3.4ZM79.2 10h3.7l6 16 6-16h3.6l-7.8 20h-3.7l-7.8-20ZM110.9 30.4c-5.9 0-10.2-4.4-10.2-10.4s4.3-10.4 10.2-10.4S121.1 14 121.1 20s-4.3 10.4-10.2 10.4Zm0-3.2c3.9 0 6.7-3 6.7-7.2s-2.8-7.2-6.7-7.2-6.7 3-6.7 7.2 2.8 7.2 6.7 7.2Z" fill="currentColor"/>
+</svg></span>
+      <span class="sm-sub">Launch Console</span>
+    </div>
+
+    <nav class="side-nav" id="sideNav">
+      <div class="nav-group">Plan</div>
+      <button class="nav-i on"   data-view="overview" data-acl="all">Overview</button>
+      <button class="nav-i"      data-view="strategy" data-acl="all">Strategy</button>
+      <button class="nav-i"      data-view="pricing"  data-acl="all">Pricing</button>
+      <button class="nav-i"      data-view="media"    data-acl="all">Media plan</button>
+
+      <div class="nav-group">Execute</div>
+      <button class="nav-i"      data-view="kol"      data-acl="all">KOL hub</button>
+      <button class="nav-i"      data-view="events"   data-acl="all">Events</button>
+      <button class="nav-i"      data-view="calendar" data-acl="all">Calendar</button>
+
+      <div class="nav-group">Govern</div>
+      <button class="nav-i"      data-view="pending" data-acl="admin">
+        Pending changes <span class="badge" id="propBadge" hidden>0</span>
+      </button>
+      <button class="nav-i"      data-view="approvals" data-acl="admin">
+        Approvals <span class="badge" id="reqBadge" hidden>0</span>
+      </button>
+      <button class="nav-i"      data-view="report"   data-acl="all">Reporting</button>
+    </nav>
+
+    <div class="side-foot">
+      <div class="who" id="whoBox"></div>
+      <div class="side-acts">
+        <button class="mini" id="backupBtn" title="Download your data">Backup</button>
+        <button class="mini" id="restoreBtn" title="Load a backup">Restore</button>
+        <input type="file" id="restoreFile" accept=".json" hidden>
+        <button class="mini" id="signOut">Sign out</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+
+    <!-- TOP BAR -->
+    <header class="top">
+      <div class="top-l">
+        <h2 id="viewTitle">Overview</h2>
+        <p id="viewSub">Where the launch stands today.</p>
+      </div>
+      <div class="top-r">
+        <button class="btn-line" id="cmdBtn" title="Command palette (⌘K)"><span class="kb">⌘K</span> Search</button>
+        <button class="btn-line" id="sessBtn" title="Sessions, sync and downloads">Sessions</button>
+        <button class="btn-line" id="printBtn">Export view</button>
+        <span class="save-dot" id="saveDot">Saved</span>
+      </div>
+    </header>
+
+    <!-- GATE RAIL — the signature: the five locks that sequence the plan -->
+    <div class="rail" id="rail">
+      <div class="rail-lab">Launch gates</div>
+      <div class="rail-track" id="railTrack"></div>
+    </div>
+
+    <div class="scroll" id="scroll">
+
+    <!-- ═══════ OVERVIEW ═══════ -->
+    <section class="view on" data-view="overview">
+      <div class="kpis" id="kpiRow"></div>
+
+      <div class="row2">
+        <div class="panel">
+          <div class="p-h"><h3>Sell-through</h3><span class="p-note">units per month</span></div>
+          <div class="chart" id="chartUnits"></div>
+        </div>
+        <div class="panel">
+          <div class="p-h"><h3>Where the money goes</h3><span class="p-note">media by channel, 6 months</span></div>
+          <div class="chart" id="chartSpend"></div>
+        </div>
+      </div>
+
+      <div class="row2">
+        <div class="panel">
+          <div class="p-h"><h3>This phase</h3></div>
+          <div id="phaseNow"></div>
+        </div>
+        <div class="panel">
+          <div class="p-h"><h3>Needs attention</h3></div>
+          <div id="attention"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════ STRATEGY ═══════ -->
+    <section class="view" data-view="strategy">
+      <div class="panel">
+        <div class="p-h"><h3>Positioning</h3><span class="p-note">masstige — clinical authority, not mass discount</span></div>
+        <div class="pos">
+          <div class="pos-line">
+            <span class="pos-seg mass">Mass<i>COSRX · Beauty of Joseon</i><b>S$13–35</b></span>
+            <span class="pos-seg here">d.nuvo<i>clinical masstige</i><b>S$19–39</b></span>
+            <span class="pos-seg prem">Derma-premium<i>Dr. Jart+ · La Roche-Posay</i><b>S$28–68</b></span>
+          </div>
+          <p class="pos-txt">Hold price. Compete on proof density — clinical substantiation, review volume and before/after evidence — never on discount depth. Every promo mechanic below protects the sticker price and moves value through bundling, vouchers and gifts instead.</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Three phases</h3><span class="p-note">each opens only when its gate clears</span></div>
+        <table class="tb" id="phaseTable"></table>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Operating rules</h3><span class="p-note">non-negotiable</span></div>
+        <div class="rules" id="rulesBox"></div>
+      </div>
+
+      <div class="panel adm-only">
+        <div class="p-h"><h3>Targets</h3><span class="p-note lock">Admin sets these</span></div>
+        <div class="fgrid" id="targetFields"></div>
+      </div>
+    </section>
+
+    <!-- ═══════ PRICING ═══════ -->
+    <section class="view" data-view="pricing">
+      <div class="panel">
+        <div class="p-h">
+          <h3>Tiered architecture</h3>
+          <span class="p-note">one MSRP, three platform behaviours</span>
+        </div>
+        <div class="tiers" id="tierBox"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h">
+          <h3>Channel pricing logic</h3>
+          <span class="p-note">what each platform is for</span>
+        </div>
+        <div class="chan3" id="chanLogic"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h">
+          <h3>SKU price book</h3>
+          <span class="p-note" id="cogsNote"></span>
+        </div>
+        <div class="tb-wrap"><table class="tb" id="skuTable"></table></div>
+        <div class="hint-bar" id="floorHint"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Bundles</h3><span class="p-note">where paid traffic lands</span></div>
+        <div class="tb-wrap"><table class="tb" id="bundleTable"></table></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h">
+          <h3>Shop links</h3>
+          <span class="p-note">connect each item to its page on the store</span>
+        </div>
+        <div id="shopSync"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h">
+          <h3>Discount simulator</h3>
+          <span class="p-note">check any promo against the floor before it goes live</span>
+        </div>
+        <div class="sim" id="simBox"></div>
+      </div>
+    </section>
+
+    <!-- ═══════ MEDIA ═══════ -->
+    <section class="view" data-view="media">
+      <div class="panel">
+        <div class="p-h">
+          <h3>Budget engine</h3>
+          <span class="p-note">base + reinvested profit</span>
+        </div>
+        <div class="tb-wrap"><table class="tb" id="budgetTable"></table></div>
+        <div class="hint-bar" id="goalCheck"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h">
+          <h3>Allocation by product</h3>
+          <span class="p-note">every dollar named to a SKU or bundle</span>
+        </div>
+        <div class="alloc-ctl">
+          <label>Month
+            <select id="allocMonth"></select>
+          </label>
+          <span class="alloc-tot" id="allocTot"></span>
+        </div>
+        <div class="tb-wrap"><table class="tb" id="allocTable"></table></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Channel briefs</h3><span class="p-note">how each is run</span></div>
+        <div id="chanBriefs"></div>
+      </div>
+    </section>
+
+    <!-- ═══════ KOL HUB ═══════ -->
+    <section class="view" data-view="kol">
+
+      <div class="panel">
+        <div class="p-h"><h3>Roster</h3><span class="p-note">two types, judged on different things</span>
+          <button class="btn-solid sm" id="addKol">Add creator</button></div>
+        <div class="ktabs" id="kolTabs"></div>
+        <div class="ktype-note" id="kolTypeNote"></div>
+        <div class="pipe" id="pipeBox"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Creators</h3><span class="p-note">click a stage above to filter</span></div>
+        <div class="tb-wrap"><table class="tb" id="kolTable"></table></div>
+        <p class="empty" id="kolEmpty" hidden></p>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Selection playbook</h3>
+          <span class="p-note">how a fee is decided</span></div>
+        <div id="playbook"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Research a creator</h3>
+          <span class="p-note">verified data only — never estimates</span></div>
+        <div class="research">
+          <div class="res-row">
+            <input id="resHandle" placeholder="@handle" autocomplete="off">
+            <select id="resPlatform">
+              <option value="TikTok">TikTok</option><option value="Instagram">Instagram</option>
+              <option value="YouTube">YouTube</option><option value="Shopee Live">Shopee Live</option>
+              <option value="Xiaohongshu">Xiaohongshu</option>
+            </select>
+            <select id="resTool">
+              <option value="ChatGPT">ChatGPT</option><option value="Copilot">Copilot</option>
+              <option value="Gemini">Gemini</option>
+            </select>
+            <button class="btn-solid" id="genPrompt">Build prompt</button>
+          </div>
+          <div class="prompt-out" id="promptOut" hidden>
+            <div class="po-h"><span>Paste this into <b id="poTool">ChatGPT</b></span>
+              <button class="btn-line sm" id="copyPrompt">Copy</button></div>
+            <pre id="promptText"></pre>
+            <div class="po-warn"><b>Verified data only.</b> If the tool cannot find a figure, leave that
+              field empty — do not accept an estimate, a range presented as fact, or a number the tool
+              cannot attribute. Where nothing is available, check the creator's TikTok Shop or Shopee
+              affiliate storefront directly and record what is publicly shown.</div>
+          </div>
+          <div class="apify adm-only">
+            <b>Apify scraping</b> — admin only. Run a verified profile scrape and paste the JSON to auto-fill.
+            <button class="btn-line sm" id="apifyBtn">Paste scrape result</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Schedule</h3>
+          <span class="p-note">deliverables and live sessions</span>
+          <button class="btn-line sm" id="schedAllIcs">Download all as calendar</button></div>
+        <div id="kolSched"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Messages</h3>
+          <span class="p-note">send from your own email or the platform inbox</span></div>
+        <div class="crm">
+          <div class="crm-ctl">
+            <label>Creator <select id="crmKol"></select></label>
+            <label>Stage <select id="crmStage"></select></label>
+            <label>Send via <select id="crmVia"></select></label>
+          </div>
+          <div class="crm-out">
+            <div class="co-h"><span id="crmSubj"></span>
+              <button class="btn-solid sm" id="crmSend">Send</button></div>
+            <textarea id="crmText" rows="12"></textarea>
+          </div>
+          <div class="crm-next" id="crmNext"></div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ═══════ EVENTS ═══════ -->
+    <section class="view" data-view="events">
+      <div class="panel">
+        <div class="p-h"><h3>Activity calendar</h3><span class="p-note">book 4–6 weeks ahead</span></div>
+        <div class="tb-wrap"><table class="tb" id="eventTable"></table></div>
+      </div>
+    </section>
+
+    <!-- ═══════ CALENDAR ═══════ -->
+    <section class="view" data-view="calendar">
+      <div class="panel">
+        <div class="p-h"><h3>Six-month plan</h3></div>
+        <div class="tb-wrap"><table class="tb" id="calTable"></table></div>
+      </div>
+      <div class="panel">
+        <div class="p-h"><h3>First eight weeks</h3><span class="p-note">tick as you go</span></div>
+        <div class="weeks" id="weekBox"></div>
+      </div>
+    </section>
+
+    <!-- ═══════ PENDING CHANGES ═══════ -->
+    <section class="view" data-view="pending">
+      <div class="panel">
+        <div class="p-h"><h3>Proposed by the team</h3>
+          <span class="p-note">nothing here has changed the plan yet</span></div>
+        <div class="pend-intro">
+          A team member editing a figure does not overwrite it. The change is held here and
+          flashes beside the live value. Approve it to apply, or keep what is there.
+        </div>
+        <div id="propList"></div>
+      </div>
+    </section>
+
+    <!-- ═══════ APPROVALS ═══════ -->
+    <section class="view" data-view="approvals">
+      <div class="panel">
+        <div class="p-h"><h3>Change requests</h3><span class="p-note">from the team</span></div>
+        <div id="reqList"></div>
+      </div>
+    </section>
+
+    <!-- ═══════ REPORTING ═══════ -->
+    <section class="view" data-view="report">
+      <div class="panel">
+        <div class="p-h"><h3>Monthly actuals</h3><span class="p-note">fill after each month closes</span></div>
+        <div class="tb-wrap"><table class="tb" id="scoreTable"></table></div>
+      </div>
+      <div class="panel">
+        <div class="p-h"><h3>Metrics and triggers</h3></div>
+        <div class="tb-wrap"><table class="tb" id="kpiTable"></table></div>
+      </div>
+      <div class="panel">
+        <div class="p-h"><h3>Month notes</h3></div>
+        <div class="notes" id="notesBox"></div>
+      </div>
+    </section>
+
+    </div><!-- /scroll -->
+  </main>
+</div>
+
+<!-- MODAL -->
+<div class="modal" id="modal" hidden>
+  <div class="modal-card">
+    <div class="modal-h"><h3 id="modalTitle"></h3><button class="modal-x" id="modalX">×</button></div>
+    <div class="modal-b" id="modalBody"></div>
+    <div class="modal-f" id="modalFoot"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+
+<!-- ═══════════ DRAWER: sessions / sync / export ═══════════ -->
+<div class="drawer" id="drawer" hidden>
+  <div class="dw">
+    <div class="dw-h">
+      <h3>Sessions &amp; data</h3>
+      <button class="modal-x" id="drawerX">×</button>
+    </div>
+    <div class="dw-tabs">
+      <button class="dw-tab on" data-tab="sessions">Sessions</button>
+      <button class="dw-tab" data-tab="sync">GitHub sync</button>
+      <button class="dw-tab" data-tab="export">Download</button>
+    </div>
+
+    <div class="dw-pane on" data-pane="sessions">
+      <div class="dw-bar">
+        <button class="btn-solid sm" id="newSessBtn">Save current plan</button>
+        <button class="btn-line sm" id="impSessBtn">Import file</button>
+      </div>
+      <div id="sessList"></div>
+    </div>
+
+    <div class="dw-pane" data-pane="sync">
+      <div id="syncPane"></div>
+    </div>
+
+    <div class="dw-pane" data-pane="export">
+      <div id="exportPane"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ COMMAND PALETTE ═══════════ -->
+<div class="cmd" id="cmd" hidden>
+  <div class="cmd-box">
+    <div class="cmd-in">
+      <span class="cmd-ic">⌘</span>
+      <input id="cmdInput" placeholder="Jump to a section, save a session, download data…" autocomplete="off">
+      <span class="cmd-esc">esc</span>
+    </div>
+    <div class="cmd-list" id="cmdList"></div>
+    <div class="cmd-foot"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>↵</kbd> select · <kbd>?</kbd> shortcuts</div>
+  </div>
+</div>
+
+<script src="data.js"></script>
+<script src="proposals.js"></script>
+<script src="app.js"></script>
+<script src="kol.js"></script>
+<script src="sessions.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>

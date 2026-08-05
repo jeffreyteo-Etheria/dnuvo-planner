@@ -1,0 +1,732 @@
+/* ════════════════════════════════════════════════
+   d.nuvo Launch Console
+   Roles: admin (passcode) · team (open)
+   Team never receives cost data — it is stripped
+   before render, and floors arrive pre-computed.
+   ════════════════════════════════════════════════ */
+
+const KEY = 'dnuvo_console_v1';
+const ADMIN_PASS = '1234';
+
+let S = {};          // persisted store
+let role = null;     // 'admin' | 'team'
+let view = 'overview';
+
+/* ── persistence ── */
+function load(){
+  try{ S = JSON.parse(localStorage.getItem(KEY) || '{}'); }catch(e){ S = {}; }
+  S.settings = Object.assign({}, DEFAULTS, S.settings || {});
+  S.skus     = S.skus     || SKUS.map(s => Object.assign({}, s));
+  S.months   = S.months   || MONTHS.map(m => ({ k:m.k, units:m.units, price:m.price }));
+  S.kols     = S.kols     || [];
+  S.requests = S.requests || [];
+  S.checks   = S.checks   || {};
+  S.gates    = S.gates    || { reviews:0, rating:0, roas:0, pool:0, buyers:0 };
+  S.actuals  = S.actuals  || {};
+  S.notes    = S.notes    || {};
+  S.proposals = S.proposals || [];
+  S.bundleOverrides = S.bundleOverrides || {};
+  S.schedule = S.schedule || [];
+  S.sendLog  = S.sendLog  || [];
+}
+let saveT;
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){}
+  const d = el('saveDot'); if(!d) return;
+  d.classList.add('on'); clearTimeout(saveT);
+  saveT = setTimeout(()=>d.classList.remove('on'), 1100);
+}
+
+/* ── helpers ── */
+const el  = id => document.getElementById(id);
+const qs  = (s,r=document) => r.querySelector(s);
+const qsa = (s,r=document) => [...r.querySelectorAll(s)];
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num = v => { const n = parseFloat(String(v).replace(/[^0-9.\-]/g,'')); return isNaN(n)?0:n; };
+const cur = n => S.settings.cur + Math.round(n).toLocaleString();
+const isAdmin = () => role === 'admin';
+
+function toast(msg){
+  const t = el('toast'); t.textContent = msg; t.hidden = false;
+  clearTimeout(t._x); t._x = setTimeout(()=>t.hidden = true, 2400);
+}
+
+/* Floor price. Computed server-side of the ACL boundary —
+   team sees the result, never the cost that produced it. */
+function floorOf(sku, commission){
+  const c = commission == null ? 0.16 : commission;
+  return (sku.cogs * 2.5) / (1 - c) + 0.5;
+}
+function maxDiscount(sku, commission){
+  const f = floorOf(sku, commission);
+  if(!sku.sale || sku.sale <= f) return 0;
+  return Math.floor((1 - f / sku.sale) * 100);
+}
+
+/* ═══════════ AUTH ═══════════ */
+function initGate(){
+  qsa('.gate-role').forEach(b => b.addEventListener('click', () => {
+    if(b.dataset.role === 'team'){ enter('team'); }
+    else { el('gatePw').classList.add('on'); el('pwInput').focus(); }
+  }));
+  el('pwBack').addEventListener('click', () => {
+    el('gatePw').classList.remove('on'); el('pwErr').textContent = ''; el('pwInput').value = '';
+  });
+  el('pwGo').addEventListener('click', tryPass);
+  el('pwInput').addEventListener('keydown', e => { if(e.key === 'Enter') tryPass(); });
+}
+function tryPass(){
+  const v = el('pwInput').value.trim();
+  if(v === ADMIN_PASS){ enter('admin'); }
+  else {
+    el('pwErr').textContent = 'That passcode does not match. Try again.';
+    el('pwInput').value = ''; el('pwInput').focus();
+  }
+}
+function enter(r){
+  role = r;
+  el('gate').hidden = true;
+  el('app').hidden = false;
+  applyACL();
+  renderWho();
+  boot();
+}
+function applyACL(){
+  qsa('.nav-i').forEach(b => {
+    b.hidden = (b.dataset.acl === 'admin' && !isAdmin());
+  });
+  qsa('.adm-only').forEach(n => { n.style.display = isAdmin() ? '' : 'none'; });
+}
+function renderWho(){
+  el('whoBox').innerHTML = isAdmin()
+    ? `<div class="who-av admin">AD</div><div class="who-t"><b>Administrator</b><span>Full access</span></div>`
+    : `<div class="who-av team">TM</div><div class="who-t"><b>Team member</b><span>Workflow access</span></div>`;
+}
+el('signOut').addEventListener('click', () => location.reload());
+
+/* ═══════════ NAV ═══════════ */
+const VIEW_META = {
+  overview :['Overview','Where the launch stands today.'],
+  strategy :['Strategy','Positioning, phases and the rules that hold them.'],
+  pricing  :['Pricing','Tiered architecture across three platforms.'],
+  media    :['Media plan','Budget, and every dollar named to a product.'],
+  kol      :['KOL hub','Source, verify, brief and manage creators.'],
+  events   :['Events','Activations, pop-ups and live sessions.'],
+  calendar :['Calendar','Six months, and the first eight weeks in detail.'],
+  pending  :['Pending changes','Proposed by the team. Nothing is applied until you decide.'],
+  approvals:['Approvals','Change requests waiting on you.'],
+  report   :['Reporting','Actuals against plan.']
+};
+function go(v){
+  view = v;
+  qsa('.nav-i').forEach(b => b.classList.toggle('on', b.dataset.view === v));
+  qsa('.view').forEach(s => s.classList.toggle('on', s.dataset.view === v));
+  const m = VIEW_META[v] || ['',''];
+  el('viewTitle').textContent = m[0];
+  el('viewSub').textContent = m[1];
+  el('scroll').scrollTop = 0;
+}
+qsa('.nav-i').forEach(b => b.addEventListener('click', () => go(b.dataset.view)));
+el('printBtn').addEventListener('click', () => window.print());
+
+/* ═══════════ GATE RAIL (signature) ═══════════ */
+function renderRail(){
+  el('railTrack').innerHTML = GATES.map(g => {
+    const cur_ = S.gates[g.id] || 0;
+    const open = cur_ >= g.target;
+    const cls  = open ? 'open' : '';
+    const val  = g.id === 'rating' ? cur_.toFixed(1) : Math.round(cur_);
+    const tgt  = g.id === 'rating' ? g.target.toFixed(1) : g.target;
+    return `<div class="rail-node ${cls}" title="${esc(g.unlocks)} — ${esc(g.why)}">
+      <span class="rn-dot"></span>
+      <span class="rn-txt"><b>${esc(g.label)}</b><span>${val} / ${tgt}</span></span>
+    </div>`;
+  }).join('');
+  // first unmet gate is "next"
+  const nodes = qsa('.rail-node');
+  for(let i=0;i<GATES.length;i++){
+    if(!(S.gates[GATES[i].id] >= GATES[i].target)){ nodes[i].classList.add('next'); break; }
+  }
+}
+
+/* ═══════════ BUDGET ENGINE ═══════════ */
+function computeBudget(){
+  const st = S.settings;
+  const margin = st.marginPct/100, reinvest = st.reinvestPct/100;
+  let prev = 0;
+  return S.months.map((m,i) => {
+    const meta = MONTHS[i];
+    const rev = m.units * m.price;
+    const profit = rev * margin;
+    const budget = i === 0 ? st.baseBudget : st.baseBudget + prev * reinvest;
+    prev = profit;
+    const ch = {};
+    Object.keys(meta.split).forEach(k => ch[k] = budget * meta.split[k]);
+    return { k:m.k, label:meta.label, units:m.units, price:m.price, rev, profit, budget, ch, meta };
+  });
+}
+
+/* ═══════════ OVERVIEW ═══════════ */
+function renderOverview(){
+  const B = computeBudget();
+  const tU = B.reduce((a,b)=>a+b.units,0);
+  const tR = B.reduce((a,b)=>a+b.rev,0);
+  const tB = B.reduce((a,b)=>a+b.budget,0);
+  const goal = S.settings.goalUnits;
+  const pct = tR ? (tB/tR*100) : 0;
+  const openGates = GATES.filter(g => (S.gates[g.id]||0) >= g.target).length;
+
+  el('kpiRow').innerHTML = [
+    ['Units planned', tU.toLocaleString(), tU>=goal
+      ? `<b>meets ${goal.toLocaleString()} goal</b>`
+      : `<i>${(goal-tU).toLocaleString()} short of goal</i>`],
+    ['Revenue', cur(tR), 'at planned average price'],
+    ['Media budget', cur(tB), `${pct.toFixed(1)}% of revenue`],
+    ['Gates open', `${openGates}/5`, openGates===5?'<b>all clear</b>':'sequencing holds'],
+    ['Creators', String(S.kols.length), `${S.kols.filter(k=>k.stage==='done').length} complete`]
+  ].map(([l,v,s]) => `<div class="kpi"><div class="kpi-l">${l}</div>
+      <div class="kpi-v">${v}</div><div class="kpi-s">${s}</div></div>`).join('');
+
+  const maxU = Math.max(...B.map(b=>b.units), 1);
+  el('chartUnits').innerHTML = B.map(b => `<div class="bar-w">
+      <div class="bar-v">${b.units}</div>
+      <div class="bar" style="height:${(b.units/maxU)*100}%"></div>
+      <div class="bar-l">${b.k}</div></div>`).join('');
+
+  const tot = {};
+  Object.keys(CHAN_META).forEach(k => tot[k] = B.reduce((a,b)=>a+(b.ch[k]||0),0));
+  const maxC = Math.max(...Object.values(tot), 1);
+  el('chartSpend').innerHTML = `<div class="hbars">` + Object.keys(CHAN_META).map(k =>
+    `<div class="hb"><span class="hb-l">${CHAN_META[k].name}</span>
+      <span class="hb-t"><span class="hb-f" style="width:${(tot[k]/maxC)*100}%;background:${CHAN_META[k].color}"></span></span>
+      <span class="hb-v">${cur(tot[k])}</span></div>`).join('') + `</div>`;
+
+  const ph = PHASES.find(p => {
+    if(p.n===1) return (S.gates.reviews||0) < 50;
+    if(p.n===2) return (S.gates.roas||0) < 1.5;
+    return true;
+  }) || PHASES[0];
+  el('phaseNow').innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <span class="pill ${ph.tag}">Phase ${ph.n}</span><b style="font-size:15px">${esc(ph.name)}</b>
+      <span class="n" style="margin-left:auto;color:var(--faint);font-size:12px">${ph.months}</span></div>
+    <p style="font-size:13px;color:var(--mute);line-height:1.6;margin-bottom:12px">${esc(ph.doing)}</p>
+    <div style="padding:11px 14px;background:var(--violet-lt);border-radius:6px;font-size:12.5px;color:var(--violet)">
+      <b>Opens the next phase:</b> ${esc(ph.gate)}</div>`;
+
+  const items = [];
+  GATES.forEach(g => {
+    const c = S.gates[g.id]||0;
+    if(c < g.target) items.push([g.unlocks + ' is locked',
+      `${g.label} at ${g.id==='rating'?c.toFixed(1):Math.round(c)} of ${g.target} ${g.unit}.`, 'p-a']);
+  });
+  if(isAdmin() && S.requests.filter(r=>r.status==='pending').length)
+    items.unshift(['Change requests waiting',
+      `${S.requests.filter(r=>r.status==='pending').length} request(s) from the team need a decision.`, 'p-v']);
+  if(!S.kols.length) items.push(['No creators yet',
+    'The review gate cannot move until creators are sourced and shipped.', 'p-r']);
+
+  el('attention').innerHTML = items.length
+    ? items.slice(0,5).map(([t,b,p]) => `<div style="display:flex;gap:11px;padding:9px 0;border-bottom:1px solid var(--line-2)">
+        <span class="pill ${p}" style="flex-shrink:0;margin-top:2px">!</span>
+        <div><b style="font-size:13px">${esc(t)}</b>
+        <div style="font-size:12.5px;color:var(--mute);margin-top:2px">${esc(b)}</div></div></div>`).join('')
+    : `<p class="empty">Nothing blocking. Keep to the calendar.</p>`;
+}
+
+/* ═══════════ STRATEGY ═══════════ */
+function renderStrategy(){
+  el('phaseTable').innerHTML = `<thead><tr><th>Phase</th><th>Months</th><th>Focus</th>
+      <th>What happens</th><th>Return</th><th>Gate</th></tr></thead><tbody>` +
+    PHASES.map(p => `<tr>
+      <td><span class="pill ${p.tag}">Phase ${p.n}</span><b style="display:block;margin-top:5px">${esc(p.name)}</b></td>
+      <td class="n">${p.months}</td><td>${esc(p.focus)}</td>
+      <td>${esc(p.doing)}</td><td class="n">${esc(p.roas)}</td><td>${esc(p.gate)}</td></tr>`).join('') + `</tbody>`;
+
+  el('rulesBox').innerHTML = RULES.map(r =>
+    `<div class="rule"><b>${esc(r.t)}</b><p>${esc(r.b)}</p></div>`).join('');
+
+  if(isAdmin()){
+    const f = [['goalUnits','Units goal'],['baseBudget','Base budget'],
+               ['marginPct','Margin %'],['reinvestPct','Reinvest %']];
+    el('targetFields').innerHTML = f.map(([k,l]) =>
+      `<label>${l}<input type="number" data-set="${k}" value="${S.settings[k]}"></label>`).join('');
+    qsa('[data-set]').forEach(i => i.addEventListener('input', () => {
+      S.settings[i.dataset.set] = num(i.value); save(); renderAll();
+    }));
+  }
+}
+
+/* ═══════════ PRICING ═══════════ */
+function renderPricing(){
+  el('tierBox').innerHTML = TIERS.map(t =>
+    `<div class="tier ${t.k}"><div class="tier-n">${esc(t.name)}</div>
+      <div class="tier-p">${esc(t.range)}</div>
+      <div class="tier-r">${esc(t.role)}</div><p>${esc(t.body)}</p></div>`).join('');
+
+  el('chanLogic').innerHTML = CHAN_LOGIC.map(c =>
+    `<div class="cl"><div class="cl-h"><b>${esc(c.name)}</b><span class="pill ${c.pill}">${esc(c.goal.split(' · ')[0])}</span></div>
+      <div class="cl-goal">${esc(c.goal)}</div>
+      <ul>${c.lines.map(l=>`<li>${esc(l)}</li>`).join('')}</ul></div>`).join('');
+
+  el('cogsNote').innerHTML = isAdmin()
+    ? 'Cost and floor visible — admin'
+    : 'Cost is hidden. Floor and discount ceiling are calculated for you.';
+
+  const head = isAdmin()
+    ? `<th>Product</th><th>Tier</th><th class="n">MSRP</th><th class="n">Sale</th><th class="n">Cost</th><th class="n">Floor</th><th class="n">Max off</th><th>Role</th><th class="n">Units</th>`
+    : `<th>Product</th><th>Tier</th><th class="n">MSRP</th><th class="n">Sale</th><th class="n">Cost</th><th class="n">Floor</th><th class="n">Max off</th><th>Role</th><th class="n">Units</th>`;
+
+  el('skuTable').innerHTML = `<thead><tr>${head}</tr></thead><tbody>` + S.skus.map((s,i) => {
+    const fl = floorOf(s), md = maxDiscount(s);
+    const costCell = isAdmin()
+      ? `<td class="n">${cell('sku', s.id, 'cogs', s.cogs, s.name + ' — cost per unit', {prefix:S.settings.cur})}</td>`
+      : `<td class="n"><span class="masked" title="Cost is not shown at your access level">••••</span></td>`;
+    const u = (typeof shopUrlFor === 'function') ? shopUrlFor(s) : '';
+    return `<tr>
+      <td><b>${esc(s.name)}</b><span class="sub">${esc(s.spec)}</span>
+        ${u?`<a class="shop-ln" href="${esc(u)}" target="_blank" rel="noopener" title="Open on the store">↗ shop</a>`:''}</td>
+      <td><span class="pill p-n">${esc(s.tier)}</span></td>
+      <td class="n">${S.settings.cur}${s.msrp}</td>
+      <td class="n">${cell('sku', s.id, 'sale', s.sale, s.name + ' — sale price', {prefix:S.settings.cur})}</td>
+      ${costCell}
+      <td class="n">${S.settings.cur}${fl.toFixed(2)}</td>
+      <td class="n"><span class="pill ${md>=20?'p-g':md>=10?'p-a':'p-r'}">${md}%</span></td>
+      <td>${esc(s.role)}<span class="sub">${esc(s.roleNote)}</span></td>
+      <td class="n">${s.units}</td></tr>`;
+  }).join('') + `</tbody>`;
+
+  wireCells();
+
+  el('floorHint').className = 'hint-bar warn';
+  el('floorHint').innerHTML = isAdmin()
+    ? `<b>Floor formula.</b> Cost × 2.5, grossed up for the ~16% marketplace commission, plus S$0.50 processing. Confirm real cost with the supplier before publishing any promotion.`
+    : `<b>Floor is already calculated.</b> Keep every promotion above the floor shown. If a planned discount breaks it, use the simulator below and request a change — an administrator will review it.`;
+
+  el('bundleTable').innerHTML = `<thead><tr><th>Bundle</th><th>Contents</th><th>Tier</th>
+      <th class="n">Price</th><th class="n">Sum of parts</th><th class="n">Saving</th><th>Where it is used</th></tr></thead><tbody>` +
+    BUNDLES.map(bRaw => {
+      const b = bundleView(bRaw);
+      const parts = b.parts.map(p => S.skus.find(s=>s.id===p)).filter(Boolean);
+      const sum = parts.reduce((a,s)=>a+s.sale,0);
+      const off = sum ? Math.round((1-b.price/sum)*100) : 0;
+      return `<tr><td><b>${esc(b.name)}</b><span class="sub">${esc(b.note)}</span></td>
+        <td style="font-size:12.5px">${parts.map(p=>esc(p.name.split(' ').slice(0,2).join(' '))).join(' + ')}</td>
+        <td><span class="pill p-n">${esc(b.tier)}</span></td>
+        <td class="n">${cell('bundle', b.id, 'price', b.price, b.name + ' — price', {prefix:S.settings.cur})}</td>
+        <td class="n" style="color:var(--faint)">${S.settings.cur}${sum}</td>
+        <td class="n"><span class="pill ${off>25?'p-a':'p-g'}">${off}%</span></td>
+        <td>${esc(b.stage)}</td></tr>`;
+    }).join('') + `</tbody>`;
+
+  wireCells();
+  if(typeof renderShopSync === 'function') renderShopSync();
+  renderSim();
+}
+
+function renderSim(){
+  const opts = S.skus.map((s,i)=>`<option value="${i}">${esc(s.name)}</option>`).join('');
+  el('simBox').innerHTML = `
+    <div class="sim-ctl">
+      <label>Product</label><select id="simSku">${opts}</select>
+      <label>Platform</label>
+      <select id="simCh">
+        <option value="0.02">TikTok Shop — 2% commission</option>
+        <option value="0.16" selected>Shopee — 16% commission</option>
+        <option value="0.00">Shopify — own store</option>
+      </select>
+      <label>Discount <span class="sim-val" id="simPctV">15%</span></label>
+      <input type="range" id="simPct" min="0" max="50" value="15">
+    </div>
+    <div class="sim-out" id="simOut"></div>`;
+
+  const upd = () => {
+    const s = S.skus[+el('simSku').value];
+    const comm = parseFloat(el('simCh').value);
+    const pct = +el('simPct').value;
+    el('simPctV').textContent = pct + '%';
+    const net = s.sale * (1 - pct/100);
+    const fl = floorOf(s, comm);
+    const ok = net >= fl;
+    const afterComm = net * (1 - comm) - 0.5;
+    const rows = [
+      ['Listed price', cur(s.sale), ''],
+      [`Discount ${pct}%`, '−' + cur(s.sale - net), ''],
+      ['Customer pays', cur(net), 'hero'],
+      ['After commission and fees', cur(afterComm), ''],
+      ['Floor price', cur(fl), '']
+    ];
+    if(isAdmin()){
+      rows.splice(4, 0, ['Cost of goods', cur(s.cogs), '']);
+      rows.push(['Margin per unit', cur(afterComm - s.cogs), afterComm - s.cogs > 0 ? '' : 'fail']);
+    }
+    rows.push([ok ? 'Clears the floor' : 'Breaks the floor',
+      ok ? cur(net - fl) + ' of headroom' : cur(fl - net) + ' below', ok ? 'pass' : 'fail']);
+    el('simOut').innerHTML = rows.map(([l,v,c]) =>
+      `<div class="so-row ${c}"><span>${l}</span><b>${v}</b></div>`).join('') +
+      (!ok && !isAdmin() ? `<div style="padding:11px 15px;border-top:1px solid var(--line)">
+        <button class="btn-line sm" id="simReq">Request approval for this price</button></div>` : '');
+    const rb = el('simReq');
+    if(rb) rb.addEventListener('click', () =>
+      openRequest('Promotional price', s.name, cur(s.sale), cur(net),
+        `Discount of ${pct}% breaks the floor price by ${cur(fl-net)}.`));
+  };
+  ['simSku','simCh','simPct'].forEach(id => {
+    el(id).addEventListener('input', upd); el(id).addEventListener('change', upd);
+  });
+  upd();
+}
+
+/* ═══════════ MEDIA ═══════════ */
+function renderMedia(){
+  const B = computeBudget();
+  const canEdit = isAdmin();
+  const chK = Object.keys(CHAN_META);
+
+  el('budgetTable').innerHTML = `<thead><tr><th>Month</th><th class="n">Units</th><th class="n">Avg price</th>
+      <th class="n">Revenue</th>${canEdit?'<th class="n">Profit</th>':''}<th class="n">Budget</th>
+      ${chK.map(k=>`<th class="n">${CHAN_META[k].name}</th>`).join('')}</tr></thead><tbody>` +
+    B.map((b,i) => `<tr>
+      <td><b>${b.label}</b></td>
+      <td class="n">${cell('month', b.k, 'units', b.units, b.label + ' — units target')}</td>
+      <td class="n">${cell('month', b.k, 'price', b.price, b.label + ' — average price', {prefix:S.settings.cur})}</td>
+      <td class="n">${cur(b.rev)}</td>
+      ${canEdit?`<td class="n">${cur(b.profit)}</td>`:''}
+      <td class="n"><b style="color:var(--violet)">${cur(b.budget)}</b></td>
+      ${chK.map(k=>`<td class="n">${b.ch[k]?cur(b.ch[k]):'—'}</td>`).join('')}</tr>`).join('') +
+    `<tr class="tot"><td>Total</td><td class="n">${B.reduce((a,b)=>a+b.units,0).toLocaleString()}</td><td class="n">—</td>
+      <td class="n">${cur(B.reduce((a,b)=>a+b.rev,0))}</td>
+      ${canEdit?`<td class="n">${cur(B.reduce((a,b)=>a+b.profit,0))}</td>`:''}
+      <td class="n">${cur(B.reduce((a,b)=>a+b.budget,0))}</td>
+      ${chK.map(k=>`<td class="n">${cur(B.reduce((a,b)=>a+(b.ch[k]||0),0))}</td>`).join('')}</tr></tbody>`;
+
+  wireCells();
+
+  const tU = B.reduce((a,b)=>a+b.units,0), goal = S.settings.goalUnits;
+  const tB = B.reduce((a,b)=>a+b.budget,0), tR = B.reduce((a,b)=>a+b.rev,0);
+  const gc = el('goalCheck');
+  if(tU >= goal){
+    gc.className = 'hint-bar ok';
+    gc.innerHTML = `<b>On target.</b> ${tU.toLocaleString()} units against a goal of ${goal.toLocaleString()}. Media ${cur(tB)} — ${(tB/tR*100).toFixed(1)}% of revenue.`;
+  } else {
+    gc.className = 'hint-bar bad';
+    gc.innerHTML = `<b>${(goal-tU).toLocaleString()} units short.</b> Raise monthly targets or extend the window. Media ${cur(tB)}.`;
+  }
+  if(!canEdit){
+    gc.innerHTML += ` <button class="btn-line sm" id="reqMedia" style="margin-left:8px">Request a change</button>`;
+    const rb = el('reqMedia');
+    if(rb) rb.addEventListener('click', () => openRequest('Media plan', 'Monthly units or budget', '', '', ''));
+  }
+
+  const sel = el('allocMonth');
+  if(!sel.options.length){
+    sel.innerHTML = B.map((b,i)=>`<option value="${i}">${b.label}</option>`).join('');
+    sel.value = 1;
+    sel.addEventListener('change', renderAlloc);
+  }
+  renderAlloc();
+
+  el('chanBriefs').innerHTML = CHAN_BRIEFS.map((c,i) =>
+    `<div class="cb ${i===0?'open':''}"><div class="cb-h">
+      <b>${esc(c.name)}</b><span class="pill ${c.pill}">${esc(c.role)}</span>
+      <span style="font-size:11.5px;color:var(--faint)">${esc(c.owner)}</span>
+      <span class="cb-x">+</span></div>
+      <div class="cb-b"><dl>${c.rows.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div></div>`).join('');
+  qsa('.cb-h').forEach(h => h.addEventListener('click', () => h.parentElement.classList.toggle('open')));
+}
+
+function renderAlloc(){
+  const B = computeBudget();
+  const i = +el('allocMonth').value || 0;
+  const b = B[i];
+  const rows = [];
+  Object.keys(ALLOC).forEach(ck => {
+    const spend = b.ch[ck] || 0;
+    if(spend <= 0) return;
+    ALLOC[ck].forEach(a => rows.push({ ch:ck, ...a, amt: spend * a.w }));
+  });
+  const tot = rows.reduce((a,r)=>a+r.amt,0);
+  el('allocTot').innerHTML = `Month total <b>${cur(tot)}</b>`;
+  el('allocTable').innerHTML = rows.length
+    ? `<thead><tr><th>Channel</th><th>Product or bundle</th><th>Format</th>
+        <th>Success measure</th><th class="n">Budget</th><th class="n">Share</th></tr></thead><tbody>` +
+      rows.map(r => `<tr>
+        <td><span class="pill p-n" style="background:${CHAN_META[r.ch].color}18;color:${CHAN_META[r.ch].color}">${CHAN_META[r.ch].name}</span></td>
+        <td><b>${esc(r.label)}</b></td><td>${esc(r.fmt)}</td>
+        <td style="color:var(--mute)">${esc(r.kpi)}</td>
+        <td class="n"><b>${cur(r.amt)}</b></td>
+        <td class="n" style="color:var(--faint)">${tot?Math.round(r.amt/tot*100):0}%</td></tr>`).join('') +
+      `</tbody>`
+    : `<tbody><tr><td colspan="6" class="empty">No paid media this month — the budget is committed to creator gifting.</td></tr></tbody>`;
+}
+
+/* ═══════════ KOL — see kol.js for roster, fit scoring, scheduling ═══════════ */
+
+/* prompt generator — verified data only */
+function buildPrompt(handle, platform, tool){
+  return `You are helping verify a creator profile for a brand partnership. Accuracy matters more than completeness.
+
+CREATOR: ${handle}
+PLATFORM: ${platform}
+MARKET: ${S.settings.market}
+
+Search the web and report ONLY figures you can confirm from a primary or reputable source that you can name. Do not estimate. Do not infer. Do not fill a gap with a typical or average value.
+
+Report these fields:
+1. Full display name and confirmed ${platform} handle
+2. Follower count — with the date observed
+3. Engagement rate — state how it was calculated and over how many posts
+4. Total number of posts or videos published
+5. Whether they have a shop or affiliate storefront, and any publicly disclosed GMV or sales volume
+6. Audience breakdown — gender split, top age bands, top locations
+7. Public contact route — business email in bio, management agency, or whether DMs are open
+8. Recent brand partnerships in skincare or beauty, with dates
+9. Whether the account shows signs of inauthentic following
+
+FORMAT
+Return a table with three columns: Field, Value, Source URL.
+
+RULES — these override any instinct to be helpful:
+· If you cannot verify a field, write exactly "NOT VERIFIED" in the Value column and leave Source blank.
+· Never present an estimate, a range, or a typical figure as if it were observed.
+· Every number must carry a source URL that a person can open and check.
+· If you cannot find the account at all, say so plainly and stop. Do not offer a similar account instead.
+· Do not generate sample, placeholder or illustrative data under any circumstances.
+
+If most fields come back NOT VERIFIED, say so directly so I know to check the creator's storefront and marketplace affiliate pages manually instead.`;
+}
+
+el('genPrompt').addEventListener('click', () => {
+  const h = el('resHandle').value.trim();
+  if(!h){ toast('Enter a handle first'); el('resHandle').focus(); return; }
+  const handle = h.startsWith('@') ? h : '@' + h;
+  const tool = el('resTool').value;
+  el('poTool').textContent = tool;
+  el('promptText').textContent = buildPrompt(handle, el('resPlatform').value, tool);
+  el('promptOut').hidden = false;
+  el('promptOut').scrollIntoView({behavior:'smooth', block:'nearest'});
+});
+el('copyPrompt').addEventListener('click', () => {
+  navigator.clipboard.writeText(el('promptText').textContent)
+    .then(()=>toast('Prompt copied — paste it into the tool'))
+    .catch(()=>toast('Select the text and copy manually'));
+});
+el('addKol').addEventListener('click', () => kolForm(-1));
+el('apifyBtn').addEventListener('click', () => {
+  if(!isAdmin()){ toast('Scraping is available to administrators only'); return; }
+  modal('Paste scrape result', `<div class="mf"><label>Profile JSON</label>
+    <textarea id="apJson" rows="9" placeholder='{"handle":"@example","followers":12400,...}'></textarea>
+    <p class="fh">Paste the JSON returned by the scraper. Fields that are absent stay empty — nothing is inferred.</p></div>`,
+    [['Cancel','x'],['Fill form','ok']], a => {
+      if(a!=='ok') return true;
+      try{
+        const d = JSON.parse(el('apJson').value);
+        kolForm(-1, {
+          handle:   d.handle || d.username || '',
+          name:     d.fullName || d.name || '',
+          platform: d.platform || 'TikTok',
+          followers:d.followers || d.followersCount || '',
+          er:       d.engagementRate || '',
+          posts:    d.posts || d.videosCount || '',
+          gmv:      d.gmv || '',
+          audience: d.audience || '',
+          contact:  d.email || d.contact || ''
+        });
+        return true;
+      }catch(e){ toast('That is not valid JSON'); return false; }
+    });
+});
+
+
+/* ═══════════ EVENTS / CALENDAR ═══════════ */
+function renderEvents(){
+  el('eventTable').innerHTML = `<thead><tr><th>Activity</th><th>When</th><th class="n">Budget</th>
+      <th>Purpose</th><th>How it runs</th><th>Owner</th></tr></thead><tbody>` +
+    EVENTS.map(e => `<tr><td><b>${esc(e.name)}</b></td><td class="n">${esc(e.when)}</td>
+      <td class="n">${esc(e.budget)}</td><td>${esc(e.goal)}</td>
+      <td style="max-width:340px">${esc(e.how)}</td><td>${esc(e.owner)}</td></tr>`).join('') + `</tbody>`;
+}
+
+function renderCalendar(){
+  const B = computeBudget();
+  el('calTable').innerHTML = `<thead><tr><th>Month</th><th>Media</th><th>Creators</th>
+      <th>Activity</th><th>Promotion</th><th class="n">Units</th><th class="n">Budget</th></tr></thead><tbody>` +
+    MONTHS.map((m,i) => `<tr><td><b>${esc(m.label)}</b></td><td>${esc(m.media)}</td>
+      <td>${esc(m.kolWork)}</td><td>${esc(m.events)}</td><td>${esc(m.promo)}</td>
+      <td class="n">${B[i].units}</td><td class="n">${cur(B[i].budget)}</td></tr>`).join('') +
+    `<tr class="tot"><td colspan="5">Total</td><td class="n">${B.reduce((a,b)=>a+b.units,0).toLocaleString()}</td>
+      <td class="n">${cur(B.reduce((a,b)=>a+b.budget,0))}</td></tr></tbody>`;
+
+  el('weekBox').innerHTML = WEEKS.map((w,wi) =>
+    `<div class="wk"><div class="wk-h"><b>${esc(w.n)} — ${esc(w.t)}</b><span>${esc(w.owner)}</span></div>
+      ${w.items.map((it,ii) => {
+        const id = `w${wi}_${ii}`;
+        return `<label class="ck"><input type="checkbox" data-ck="${id}"${S.checks[id]?' checked':''}>
+          <span>${esc(it)}</span></label>`;
+      }).join('')}</div>`).join('');
+  qsa('[data-ck]').forEach(c => c.addEventListener('change', () => {
+    S.checks[c.dataset.ck] = c.checked; save();
+  }));
+}
+
+/* ═══════════ APPROVALS ═══════════ */
+function openRequest(area, field, from, to, why){
+  modal('Request a change', `
+    <div class="mf"><label>Area</label><input id="rqArea" value="${esc(area)}" readonly></div>
+    <div class="mf"><label>What should change</label><input id="rqField" value="${esc(field)}"></div>
+    <div class="mf2">
+      <div class="mf"><label>Current</label><input id="rqFrom" value="${esc(from)}"></div>
+      <div class="mf"><label>Proposed</label><input id="rqTo" value="${esc(to)}"></div></div>
+    <div class="mf"><label>Why</label><textarea id="rqWhy" rows="4">${esc(why)}</textarea>
+      <p class="fh">An administrator reviews this. Give them enough to decide without asking you.</p></div>`,
+    [['Cancel','x'],['Send request','ok']], a => {
+      if(a!=='ok') return true;
+      S.requests.push({
+        id: Date.now(), area: el('rqArea').value, field: el('rqField').value,
+        from: el('rqFrom').value, to: el('rqTo').value, why: el('rqWhy').value,
+        status:'pending', at:new Date().toISOString()
+      });
+      save(); renderApprovals(); renderOverview();
+      toast('Request sent for approval');
+      return true;
+    });
+}
+
+function renderApprovals(){
+  const pending = S.requests.filter(r=>r.status==='pending');
+  const badge = el('reqBadge');
+  badge.hidden = !pending.length; badge.textContent = pending.length;
+
+  el('reqList').innerHTML = S.requests.length
+    ? S.requests.slice().reverse().map(r => {
+        const d = new Date(r.at);
+        const stat = r.status==='pending'
+          ? `<span class="pill p-a">Pending</span>`
+          : r.status==='approved' ? `<span class="pill p-g">Approved</span>`
+          : `<span class="pill p-r">Declined</span>`;
+        return `<div class="req">
+          <div class="req-h">${stat}<b>${esc(r.area)}</b>
+            <span style="color:var(--mute);font-size:12.5px">${esc(r.field)}</span>
+            <span class="when">${d.toLocaleDateString()}</span></div>
+          ${(r.from||r.to)?`<div class="req-d">
+            <span class="from">${esc(r.from||'—')}</span><span>→</span>
+            <span class="to">${esc(r.to||'—')}</span></div>`:''}
+          ${r.why?`<div class="req-why">${esc(r.why)}</div>`:''}
+          ${r.status==='pending'?`<div class="req-a">
+            <button class="btn-ok" data-ap="${r.id}">Approve</button>
+            <button class="btn-no" data-dc="${r.id}">Decline</button></div>`:''}
+        </div>`;
+      }).join('')
+    : `<p class="empty">No requests. When a team member proposes a change, it lands here.</p>`;
+
+  qsa('[data-ap]').forEach(b => b.addEventListener('click', () => {
+    const r = S.requests.find(x=>x.id==b.dataset.ap); r.status='approved';
+    save(); renderApprovals(); toast('Approved — apply the change in the relevant view');
+  }));
+  qsa('[data-dc]').forEach(b => b.addEventListener('click', () => {
+    const r = S.requests.find(x=>x.id==b.dataset.dc); r.status='declined';
+    save(); renderApprovals(); toast('Declined');
+  }));
+}
+
+/* ═══════════ REPORTING ═══════════ */
+function renderReport(){
+  const B = computeBudget();
+  el('scoreTable').innerHTML = `<thead><tr><th>Month</th><th class="n">Units plan</th><th class="n">Units actual</th>
+      <th class="n">Revenue plan</th><th class="n">Revenue actual</th><th class="n">Return</th>
+      <th class="n">Reviews</th><th class="n">Rating</th></tr></thead><tbody>` +
+    B.map(b => {
+      const a = S.actuals[b.k] || {};
+      const f = k => `<span class="ed" contenteditable="true" data-act="${b.k}" data-f="${k}">${esc(a[k]||'')}</span>`;
+      return `<tr><td><b>${b.label}</b></td><td class="n">${b.units}</td><td class="n">${f('units')}</td>
+        <td class="n">${cur(b.rev)}</td><td class="n">${f('rev')}</td>
+        <td class="n">${f('roas')}</td><td class="n">${f('reviews')}</td><td class="n">${f('rating')}</td></tr>`;
+    }).join('') + `</tbody>`;
+  qsa('[data-act]').forEach(c => c.addEventListener('blur', () => {
+    const k = c.dataset.act;
+    S.actuals[k] = S.actuals[k] || {};
+    S.actuals[k][c.dataset.f] = c.textContent.trim();
+    // latest actuals feed the gate rail
+    const last = Object.values(S.actuals).filter(a=>a.reviews||a.rating||a.roas).pop();
+    if(last){
+      if(last.reviews) S.gates.reviews = num(last.reviews);
+      if(last.rating)  S.gates.rating  = num(last.rating);
+      if(last.roas)    S.gates.roas    = num(last.roas);
+    }
+    save(); renderRail(); renderOverview();
+  }));
+
+  el('kpiTable').innerHTML = `<thead><tr><th>Metric</th><th>Target</th><th>Where to read it</th>
+      <th>If it slips</th></tr></thead><tbody>` +
+    METRICS.map(m => `<tr><td><b>${esc(m.name)}</b></td><td class="n">${esc(m.target)}</td>
+      <td style="color:var(--mute)">${esc(m.src)}</td><td>${esc(m.action)}</td></tr>`).join('') + `</tbody>`;
+
+  el('notesBox').innerHTML = [
+    ['worked','What worked, and what should we do more of'],
+    ['failed','What did not work, and what do we stop'],
+    ['next','Top three priorities next month'],
+    ['stock','Stock remaining per product — flag anything under 50 units']
+  ].map(([k,l]) => `<label>${l}</label>
+    <textarea data-note="${k}" rows="3">${esc(S.notes[k]||'')}</textarea>`).join('');
+  qsa('[data-note]').forEach(t => t.addEventListener('input', () => {
+    S.notes[t.dataset.note] = t.value; save();
+  }));
+}
+
+/* ═══════════ MODAL ═══════════ */
+let modalCb = null;
+function modal(title, body, btns, cb){
+  el('modalTitle').textContent = title;
+  el('modalBody').innerHTML = body;
+  el('modalFoot').innerHTML = btns.map(([l,a]) =>
+    `<button class="${a==='ok'?'btn-solid':a==='del'?'btn-no':'btn-line'}" data-act="${a}">${esc(l)}</button>`).join('');
+  modalCb = cb;
+  el('modal').hidden = false;
+  qsa('#modalFoot [data-act]').forEach(b => b.addEventListener('click', () => {
+    if(!modalCb || modalCb(b.dataset.act) !== false) closeModal();
+  }));
+}
+function closeModal(){ el('modal').hidden = true; modalCb = null; }
+el('modalX').addEventListener('click', closeModal);
+el('modal').addEventListener('click', e => { if(e.target === el('modal')) closeModal(); });
+document.addEventListener('keydown', e => { if(e.key === 'Escape' && !el('modal').hidden) closeModal(); });
+
+/* ═══════════ BACKUP ═══════════ */
+el('backupBtn').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(S,null,2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `launch-console-${new Date().toISOString().slice(0,10)}.json`;
+  a.click(); URL.revokeObjectURL(a.href);
+  toast('Backup downloaded');
+});
+el('restoreBtn').addEventListener('click', () => el('restoreFile').click());
+el('restoreFile').addEventListener('change', e => {
+  const f = e.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try{
+      const d = JSON.parse(r.result);
+      if(typeof d !== 'object' || !d) throw 0;
+      localStorage.setItem(KEY, JSON.stringify(d));
+      toast('Backup restored'); setTimeout(()=>location.reload(), 700);
+    }catch(err){ toast('That file could not be read'); }
+  };
+  r.readAsText(f);
+});
+
+/* ═══════════ BOOT ═══════════ */
+function renderAll(){
+  renderRail(); renderOverview(); renderStrategy(); renderPricing();
+  renderMedia(); renderEvents(); renderCalendar(); renderApprovals(); renderReport();
+  if(typeof renderProposals === 'function') renderProposals();
+  // tables are rebuilt on each render, so re-attach sorting and download menus
+  if(typeof refreshSortable === 'function'){ refreshSortable(); injectPanelExports(); }
+}
+function boot(){
+  renderAll(); renderKol(); renderPlaybook(); go('overview');
+  if(typeof initConsoleUI === 'function') initConsoleUI();
+}
+
+load();
+initGate();
