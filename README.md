@@ -9,6 +9,15 @@ Static site. No build step, no server, no dependencies.
 
 **Netlify via Git** — build command blank, publish directory `.`
 
+**Auto-trigger deploy on push (recommended)**
+
+1. In Netlify: Site settings -> Build & deploy -> Build hooks -> Add build hook.
+2. Copy the hook URL.
+3. In GitHub repo: Settings -> Secrets and variables -> Actions -> New repository secret.
+4. Name it `NETLIFY_BUILD_HOOK` and paste the URL.
+
+This repo includes `.github/workflows/netlify-deploy-hook.yml`, which triggers that hook on every push to `main`.
+
 ## Access
 
 | Role | How to enter | Sees |
