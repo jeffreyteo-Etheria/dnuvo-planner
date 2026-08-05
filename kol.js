@@ -54,6 +54,8 @@ function renderKol(){
   renderKolTabs();
   renderKolPipe();
   renderKolTable();
+  renderCompPulse();
+  renderLongTailPlan();
   renderCrm();
   renderKolSchedule();
   if(typeof refreshSortable === 'function'){ refreshSortable(); injectPanelExports(); }
@@ -566,4 +568,69 @@ function renderPlaybook(){
       filtering, cannot sell a clinical product honestly — no audience size compensates for that.
       The console caps terms at commission-only when either is unticked.
     </div>`;
+}
+
+function renderCompPulse(){
+  const box = el('compPulse'); if(!box) return;
+  const priceTag = (row, key) => {
+    const v = row[key]; if(!v) return '—';
+    return (row.currency === 'USD' ? '$' : 'S$') + v;
+  };
+  const rows = COMPETITOR_INTEL.map(r => `
+      <tr>
+        <td><b>${esc(r.competitor)}</b><span class="sub">${esc(r.product)}</span></td>
+        <td>${esc(r.productType)}</td>
+        <td>${esc(r.channel)}</td>
+        <td class="n">${priceTag(r, 'listPrice')}</td>
+        <td class="n">${priceTag(r, 'promoPrice')}</td>
+        <td>${esc(r.keyMessage)}</td>
+        <td><a class="src-ln" href="${esc(r.source)}" target="_blank" rel="noopener">Source</a></td>
+      </tr>`).join('');
+
+  box.innerHTML = `
+    <div class="intel-head">
+      <span>Observed ${esc((COMPETITOR_INTEL[0]||{}).observedAt || '')} · refresh weekly before decisions</span>
+      <button class="btn-line sm" id="expCompCsv">Download tracker CSV</button>
+    </div>
+    <div class="tb-wrap"><table class="tb" id="compTable">
+      <thead><tr><th>Competitor</th><th>Product type</th><th>Channel</th><th class="n">List</th><th class="n">Promo</th><th>Key message</th><th>Link</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+
+    <div class="msg-stack">
+      ${DNUVO_MESSAGE_STACK.map(m => `<div class="ms-card"><span>${esc(m.lane)}</span><b>${esc(m.text)}</b></div>`).join('')}
+    </div>
+
+    <div class="gap-note">
+      <b>Market gap focus:</b> most competitors lean on generic hydration language. d.nuvo should lead with delivery depth,
+      mechanism education, and claim-safe proof architecture in creator briefs.
+    </div>`;
+
+  const dlBtn = el('expCompCsv');
+  if(dlBtn) dlBtn.addEventListener('click', () => {
+    if(typeof toCSV !== 'function' || typeof dl !== 'function'){
+      toast('Export is not available right now');
+      return;
+    }
+    const csvRows = [
+      ['competitor','product','product_type','channel','currency','list_price','promo_price','observed_at','key_message','source'],
+      ...COMPETITOR_INTEL.map(r => [r.competitor,r.product,r.productType,r.channel,r.currency,r.listPrice,r.promoPrice,r.observedAt,r.keyMessage,r.source])
+    ];
+    dl('dnuvo-competitor-tracker-' + stamp() + '.csv', toCSV(csvRows), 'text/csv;charset=utf-8');
+    toast('Competitor tracker downloaded');
+  });
+}
+
+function renderLongTailPlan(){
+  const box = el('longTailPlan'); if(!box) return;
+  box.innerHTML = `<div class="tb-wrap"><table class="tb" id="longTailTable">
+      <thead><tr><th>Platform</th><th>Role</th><th>M1-M2</th><th>M3-M4</th><th>M5-M6</th></tr></thead>
+      <tbody>${LONG_TAIL_PLAN.map(p => `<tr>
+        <td><b>${esc(p.channel)}</b></td>
+        <td>${esc(p.role)}</td>
+        <td>${esc(p.m12)}</td>
+        <td>${esc(p.m34)}</td>
+        <td>${esc(p.m56)}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>`;
 }

@@ -247,6 +247,168 @@ const CHAN_META = {
   kol:   { name:'KOL',         color:'#8B82D4' }
 };
 
+/* ── Role quickstart cards (overview panel) ── */
+const ROLE_QUICKSTART = [
+  {
+    role:'Media planner',
+    jump:'media',
+    focus:'Budget engine and allocation by SKU',
+    guide:[
+      'Check launch gates before scaling spend',
+      'Assign each dollar to a SKU or bundle',
+      'Close month with actuals in Reporting'
+    ]
+  },
+  {
+    role:'Social / KOL manager',
+    jump:'kol',
+    focus:'Creator pipeline and verified proof capture',
+    guide:[
+      'Run source > contact > ship > post > complete',
+      'Leave unverified numbers blank',
+      'Route exceptions to approvals'
+    ]
+  },
+  {
+    role:'Event and retail lead',
+    jump:'events',
+    focus:'Campaign calendar and retail activations',
+    guide:[
+      'Align event windows with creator drops',
+      'Avoid major pushes before trust gates open',
+      'Log impact in monthly reporting'
+    ]
+  },
+  {
+    role:'Content creative manager',
+    jump:'strategy',
+    focus:'Message system and channel adaptation',
+    guide:[
+      'Map each content batch to one KPI',
+      'Maintain claim-safe copy hierarchy',
+      'Refresh hooks by phase, not by noise'
+    ]
+  }
+];
+
+/* ── Competitor pulse (import-ready rows) ──
+   Keep this list to six closest competitors for d.nuvo's
+   ceramide and barrier-repair positioning.            */
+const COMPETITOR_INTEL = [
+  {
+    competitor:'CeraVe',
+    product:'Moisturizing Cream',
+    productType:'Ceramide moisturizer / barrier repair',
+    channel:'Brand PDP',
+    currency:'USD',
+    listPrice:'14.99',
+    promoPrice:'',
+    observedAt:'2026-08-05',
+    keyMessage:'Three essential ceramides, barrier restore, MVE delivery technology.',
+    source:'https://www.cerave.com/skincare/moisturizers/moisturizing-cream'
+  },
+  {
+    competitor:'Cetaphil',
+    product:'Moisturizing Lotion',
+    productType:'Sensitive skin barrier hydration',
+    channel:'Brand PDP',
+    currency:'USD',
+    listPrice:'',
+    promoPrice:'',
+    observedAt:'2026-08-05',
+    keyMessage:'48-hour hydration and moisture barrier restoration in one week.',
+    source:'https://www.cetaphil.com/us/products/product-categories/body-moisturizers/moisturizing-lotion/302990241334.html'
+  },
+  {
+    competitor:'COSRX',
+    product:'Balancium Comfort Ceramide Cream 80g',
+    productType:'Ceramide comfort cream',
+    channel:'Watsons SG',
+    currency:'SGD',
+    listPrice:'35.20',
+    promoPrice:'31.68',
+    observedAt:'2026-08-05',
+    keyMessage:'Comfort-led barrier support for sensitive skin.',
+    source:'https://www.watsons.com.sg/cosrx-balancium-comfort-ceramide-cream-80g/p/BP_28875'
+  },
+  {
+    competitor:'CERADAN',
+    product:'Ceramide Daily Moisturising Cream 500g',
+    productType:'Daily ceramide moisturizer',
+    channel:'Watsons SG',
+    currency:'SGD',
+    listPrice:'45.90',
+    promoPrice:'36.70',
+    observedAt:'2026-08-05',
+    keyMessage:'Clinical ceramide care for daily barrier support.',
+    source:'https://www.watsons.com.sg/ceradan-ceramide-daily-moisturising-cream-500g/p/BP_85774'
+  },
+  {
+    competitor:'ILLIYOON',
+    product:'Ceramide Ato Gentle Skin Toner 250ml',
+    productType:'Ceramide daily barrier line',
+    channel:'Watsons SG',
+    currency:'SGD',
+    listPrice:'25.00',
+    promoPrice:'20.00',
+    observedAt:'2026-08-05',
+    keyMessage:'Gentle daily ceramide maintenance with K-beauty positioning.',
+    source:'https://www.watsons.com.sg/illiyoon-ceramide-ato-gentle-skin-toner-250ml/p/BP_92916'
+  },
+  {
+    competitor:'Suu Balm',
+    product:'Ceramide Moisturiser (Rapid Itch Relief) 75ml',
+    productType:'Ceramide + itch relief moisturizer',
+    channel:'Watsons SG',
+    currency:'SGD',
+    listPrice:'24.40',
+    promoPrice:'20.74',
+    observedAt:'2026-08-05',
+    keyMessage:'Rapid itch-relief framing plus ceramide care.',
+    source:'https://www.watsons.com.sg/suu-balm-ceramide-moisturiser-rapid-itch-relief-75ml/p/BP_26677'
+  }
+];
+
+/* ── d.nuvo message stack for KOL and content teams ── */
+const DNUVO_MESSAGE_STACK = [
+  { lane:'Emotional', text:'Your skin deserves ingredients that go deeper.' },
+  { lane:'Educational', text:'Stop moisturizing the surface. Start feeding the layers.' },
+  { lane:'Credibility', text:'15x deeper (or validated benchmark), not a claim - a patented system.' },
+  { lane:'Differentiation', text:'A ceramide delivery system designed for absorption plus repair.' }
+];
+
+/* ── Channel long-tail map for a coordinated 6-month push ── */
+const LONG_TAIL_PLAN = [
+  {
+    channel:'Shopee',
+    role:'Conversion and repeat purchase',
+    m12:'Reviews, voucher mechanics, and PDP trust depth',
+    m34:'Bundle scaling and retargeting once trust gates clear',
+    m56:'Repeat-buyer packs and campaign-event conversion spikes'
+  },
+  {
+    channel:'TikTok Shop',
+    role:'Discovery and creator proof loop',
+    m12:'Education-first UGC and mechanism explainers',
+    m34:'Live selling tied to winning claim hooks',
+    m56:'Creator clusters by segment and replay conversion'
+  },
+  {
+    channel:'Shopify',
+    role:'Brand authority and lifecycle capture',
+    m12:'Science story pages and trust proof blocks',
+    m34:'Bundle landing pages with remarketing flows',
+    m56:'Loyalty and routine upsell to lift LTV'
+  },
+  {
+    channel:'Lazada',
+    role:'Incremental marketplace reach',
+    m12:'SKU hygiene and listing consistency',
+    m34:'Campaign calendar integration with retail moments',
+    m56:'Value-set offers while holding MSRP architecture'
+  }
+];
+
 /* ── KOL pipeline stages ── */
 const KOL_STAGES = [
   { k:'sourced',  name:'Sourced',   desc:'Found and verified. Not yet contacted.' },

@@ -232,6 +232,14 @@ function renderOverview(){
         <div><b style="font-size:13px">${esc(t)}</b>
         <div style="font-size:12.5px;color:var(--mute);margin-top:2px">${esc(b)}</div></div></div>`).join('')
     : `<p class="empty">Nothing blocking. Keep to the calendar.</p>`;
+
+  el('roleQuickstart').innerHTML = ROLE_QUICKSTART.map((r, i) =>
+    `<div class="rq" data-rq="${i}">
+      <div class="rq-h"><b>${esc(r.role)}</b><span>${esc(r.focus)}</span></div>
+      <ul class="rq-l">${r.guide.map(g => `<li>${esc(g)}</li>`).join('')}</ul>
+      <button class="btn-line sm" data-rqgo="${esc(r.jump)}">Open ${esc((VIEW_META[r.jump]||['section'])[0])}</button>
+    </div>`).join('');
+  qsa('[data-rqgo]').forEach(b => b.addEventListener('click', () => go(b.dataset.rqgo)));
 }
 
 /* ═══════════ STRATEGY ═══════════ */

@@ -203,6 +203,14 @@ function sectionRows(sec){
         (KOL_STAGES.find(s=>s.k===k.stage)||{}).name||k.stage, k.source||'', k.notes||'']);
       return [head, ...rows];
     }
+    case 'compintel': {
+      const head = ['Competitor','Product','Product type','Channel','Currency','List price','Promo price','Observed at','Key message','Source'];
+      const rows = COMPETITOR_INTEL.map(r => [
+        r.competitor, r.product, r.productType, r.channel, r.currency,
+        r.listPrice || '', r.promoPrice || '', r.observedAt, r.keyMessage, r.source
+      ]);
+      return [head, ...rows];
+    }
     case 'calendar': {
       const head = ['Month','Media','Creators','Activity','Promotion','Units','Budget'];
       const rows = MONTHS.map((m,i)=>[m.label,m.media,m.kolWork,m.events,m.promo,
@@ -248,6 +256,7 @@ function sectionRows(sec){
 const SECTION_LABELS = {
   strategy:'Strategy and phases', pricing:'Price book', bundles:'Bundles',
   media:'Media budget', alloc:'Allocation by product', kol:'Creator roster',
+  compintel:'Competitor intelligence',
   calendar:'Six-month calendar', events:'Activities', weeks:'First eight weeks',
   report:'Reporting actuals', gates:'Launch gates', approvals:'Change requests'
 };
