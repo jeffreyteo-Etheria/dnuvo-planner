@@ -402,7 +402,8 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
 
 /* ══════════ MODAL ══════════ */
 .modal{position:fixed;inset:0;z-index:800;background:rgba(22,24,29,.55);
-  display:flex;align-items:center;justify-content:center;padding:24px}
+  display:none;align-items:center;justify-content:center;padding:24px}
+.modal:not([hidden]){display:flex}
 .modal-card{background:var(--panel);border-radius:10px;width:100%;max-width:560px;
   max-height:88vh;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.3)}
 .modal-h{display:flex;align-items:center;justify-content:space-between;padding:17px 20px;
@@ -482,7 +483,8 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
 
 /* ── DRAWER ── */
 .drawer{position:fixed;inset:0;z-index:820;background:rgba(22,24,29,.4);
-  opacity:0;transition:opacity .2s}
+  display:none;opacity:0;transition:opacity .2s}
+.drawer:not([hidden]){display:block}
 .drawer.on{opacity:1}
 .dw{position:absolute;right:0;top:0;bottom:0;width:min(520px,100%);background:var(--panel);
   display:flex;flex-direction:column;box-shadow:-16px 0 48px rgba(0,0,0,.18);
@@ -581,7 +583,8 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
 
 /* ── COMMAND PALETTE ── */
 .cmd{position:fixed;inset:0;z-index:900;background:rgba(22,24,29,.5);
-  display:flex;align-items:flex-start;justify-content:center;padding:12vh 20px 20px}
+  display:none;align-items:flex-start;justify-content:center;padding:12vh 20px 20px}
+.cmd:not([hidden]){display:flex}
 .cmd-box{width:100%;max-width:580px;background:var(--panel);border-radius:11px;
   box-shadow:0 24px 70px rgba(0,0,0,.35);overflow:hidden;
   animation:cmdIn .16s cubic-bezier(.4,0,.2,1)}
