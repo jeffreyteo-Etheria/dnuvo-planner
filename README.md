@@ -194,6 +194,104 @@ Exports respect the access boundary: a team member's export contains no cost or 
 Column headings sort. Pipeline stages filter the creator roster. Channel briefs expand and
 collapse. The gate rail is hoverable for the reasoning behind each lock.
 
+## Role-based operating guide
+
+Keep usage simple: each role should enter, complete its own section, then hand off with a session save.
+
+### Media planner
+
+1. Start in **Media plan** and update month budgets only after checking gate status in Overview.
+2. Use **Allocation by product** so every spend line is attached to a SKU or bundle.
+3. Open **Reporting** monthly and enter actuals to unlock the next gate in sequence.
+4. Save a session named `M{month} media review` before changing channel splits.
+
+### Social / KOL manager
+
+1. Work from **KOL hub** using stage flow: source, contact, ship, post, complete.
+2. For every creator, log only verified metrics; leave unknown fields blank.
+3. Use the prompt builder for verified-data collection and attach source links in notes.
+4. Send approvals for fee, pricing, or discount exceptions through request flow only.
+
+### Event and retail lead
+
+1. Manage cadence in **Events** and **Calendar** first, then coordinate promo windows with KOL posts.
+2. Keep event timing aligned to gates: avoid major live pushes before trust proof gates are open.
+3. Track post-event impact in **Reporting** within the same month close.
+
+### Content creative manager
+
+1. Use **Strategy** and **Pricing** to lock message hierarchy before asset production.
+2. Build content variants by channel objective: proof, conversion, retention.
+3. Match each creative batch to one monthly KPI and one gate outcome.
+4. Save snapshots before replacing core copy angles.
+
+### Administrator
+
+1. Review **Pending changes** and **Approvals** daily.
+2. Approve only changes that preserve floor price and gate sequence logic.
+3. Keep cost edits, floor assumptions, and target shifts documented in session notes.
+4. Publish a monthly "decision snapshot" session as the single source of truth.
+
+## Competitor intelligence baseline (ceramide / barrier)
+
+Use this as a planning baseline for the KOL team. Revalidate weekly in-market because prices move with campaigns.
+
+| Competitor | Product reference | Observed price signal | Messaging pattern |
+|---|---|---|---|
+| **CeraVe** | Moisturizing Cream | US PDP shows **$14.99** | 3 essential ceramides, barrier restore, MVE delivery, dermatologist-developed |
+| **Cetaphil** | Moisturizing Lotion | Price varies by retailer | 48-hour hydration, barrier restoration in 1 week, sensitive-skin safety |
+| **COSRX** | Balancium Comfort Ceramide Cream 80g | Watsons SG: **S$31.68** promo / S$35.20 list | Comfort barrier care, soothing, K-beauty credibility |
+| **CERADAN** | Ceramide Daily Moisturising Cream 500g | Watsons SG: **S$36.70** promo / S$45.90 list | Clinical ceramide care, family-safe daily moisturising |
+| **ILLIYOON** | Green Tea / Ceramide Ato line references | Watsons SG ceramide line often around **S$12-S$25** items | Gentle barrier support, daily maintenance |
+| **Suu Balm** | Ceramide Moisturiser line | Watsons SG: **S$20.74** (75ml promo) to **S$54.10** (350ml) | Itch relief + ceramide, problem-solution framing |
+
+Sources used for baseline capture: CeraVe PDP, Cetaphil PDP, and Watsons SG ceramide listing pages.
+
+## Market gaps and opportunity framing for d.nuvo
+
+1. Most competitors over-index on generic hydration language; d.nuvo can own deeper-delivery education.
+2. Few brands combine premium-science explanation with creator-friendly conversion hooks in one system.
+3. Marketplace promotions are frequent; differentiation must come from mechanism proof and structured storytelling, not pure discount depth.
+
+Recommended message stack for KOL and content teams:
+
+1. Emotional: **Your skin deserves ingredients that go deeper.**
+2. Educational: **Stop moisturizing the surface. Start feeding the layers.**
+3. Credibility: **15x deeper (or validated benchmark), not a claim - a patented system.**
+4. Differentiation: **A ceramide delivery system designed for absorption plus repair, not surface coating.**
+
+Only publish numeric claims when the exact legal-approved evidence pack is attached.
+
+## 6-month coordinated platform push (long-tail)
+
+### Shopee
+
+1. Role: conversion and repeat purchase engine.
+2. Months 1-2: seed reviews, FAQ optimization, voucher-led basket building.
+3. Months 3-4: bundle scaling and retargeting once trust gates clear.
+4. Months 5-6: repeat-buyer packs and event-linked conversion spikes.
+
+### TikTok Shop
+
+1. Role: discovery and creator proof loop.
+2. Months 1-2: education-heavy UGC and mechanism explainers.
+3. Months 3-4: live selling tied to proven hooks, not first-touch discounting.
+4. Months 5-6: creator clusters by audience segment and replay-driven conversion.
+
+### Shopify
+
+1. Role: brand authority and full-funnel capture.
+2. Months 1-2: science story, ingredient pages, and trust assets.
+3. Months 3-4: bundle landing pages and email/SMS remarketing flows.
+4. Months 5-6: loyalty and routine-system upsell to increase LTV.
+
+### Lazada
+
+1. Role: incremental reach and campaign-event participation.
+2. Months 1-2: SKU hygiene and PDP consistency.
+3. Months 3-4: campaign calendar integration with retail moments.
+4. Months 5-6: value-set offers while preserving core MSRP architecture.
+
 ## Adapting to another brand or market
 
 Everything the console renders comes from `data.js`. Edit that one file:
