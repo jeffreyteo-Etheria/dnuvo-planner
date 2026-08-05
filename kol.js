@@ -572,11 +572,12 @@ function renderPlaybook(){
 
 function renderCompPulse(){
   const box = el('compPulse'); if(!box) return;
+  const compRows = (S.compIntel && S.compIntel.length) ? S.compIntel : COMPETITOR_INTEL;
   const priceTag = (row, key) => {
     const v = row[key]; if(!v) return '—';
     return (row.currency === 'USD' ? '$' : 'S$') + v;
   };
-  const rows = COMPETITOR_INTEL.map(r => `
+  const rows = compRows.map(r => `
       <tr>
         <td><b>${esc(r.competitor)}</b><span class="sub">${esc(r.product)}</span></td>
         <td>${esc(r.productType)}</td>
@@ -589,8 +590,11 @@ function renderCompPulse(){
 
   box.innerHTML = `
     <div class="intel-head">
-      <span>Observed ${esc((COMPETITOR_INTEL[0]||{}).observedAt || '')} · refresh weekly before decisions</span>
+      <span>Observed ${esc((compRows[0]||{}).observedAt || '')} · refresh weekly before decisions</span>
       <button class="btn-line sm" id="expCompCsv">Download tracker CSV</button>
+      <button class="btn-line sm" id="impCompCsv">Upload CSV</button>
+      <button class="btn-line sm" id="pasteCompCsv">Paste CSV</button>
+      <input type="file" id="impCompFile" accept=".csv,text/csv" hidden>
     </div>
     <div class="tb-wrap"><table class="tb" id="compTable">
       <thead><tr><th>Competitor</th><th>Product type</th><th>Channel</th><th class="n">List</th><th class="n">Promo</th><th>Key message</th><th>Link</th></tr></thead>
@@ -614,11 +618,102 @@ function renderCompPulse(){
     }
     const csvRows = [
       ['competitor','product','product_type','channel','currency','list_price','promo_price','observed_at','key_message','source'],
-      ...COMPETITOR_INTEL.map(r => [r.competitor,r.product,r.productType,r.channel,r.currency,r.listPrice,r.promoPrice,r.observedAt,r.keyMessage,r.source])
+      ...compRows.map(r => [r.competitor,r.product,r.productType,r.channel,r.currency,r.listPrice,r.promoPrice,r.observedAt,r.keyMessage,r.source])
     ];
     dl('dnuvo-competitor-tracker-' + stamp() + '.csv', toCSV(csvRows), 'text/csv;charset=utf-8');
     toast('Competitor tracker downloaded');
   });
+
+  const applyImportedRows = rowsIn => {
+    const normalized = rowsIn.filter(r => r.competitor && r.product).map(r => ({
+      competitor: r.competitor,
+      product: r.product,
+      productType: r.product_type || r.producttype || r.category || 'Ceramide / barrier',
+      channel: r.platform_channel || r.channel || 'Marketplace',
+      currency: (r.currency || 'SGD').toUpperCase(),
+      listPrice: r.list_price || r.listprice || '',
+      promoPrice: r.promo_price || r.promoprice || '',
+      observedAt: r.week_start || r.observed_at || new Date().toISOString().slice(0,10),
+      keyMessage: [r.key_message_1, r.key_message_2, r.key_message].filter(Boolean).join(' | '),
+      source: r.source_url || r.source || ''
+    }));
+    if(!normalized.length){
+      toast('No valid competitor rows found');
+      return;
+    }
+    S.compIntel = normalized;
+    save();
+    renderCompPulse();
+    toast('Competitor CSV imported');
+  };
+
+  const handleCsvText = text => {
+    const rowsIn = parseCsvObjects(text);
+    applyImportedRows(rowsIn);
+  };
+
+  el('impCompCsv').addEventListener('click', () => el('impCompFile').click());
+  el('impCompFile').addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    if(!f) return;
+    const reader = new FileReader();
+    reader.onload = () => handleCsvText(String(reader.result || ''));
+    reader.readAsText(f);
+    e.target.value = '';
+  });
+
+  el('pasteCompCsv').addEventListener('click', () => {
+    modal('Paste competitor CSV', `
+      <div class="mf"><label>CSV content</label>
+        <textarea id="compCsvText" rows="12" placeholder="Paste CSV from weekly-competitor-tracker.csv"></textarea>
+        <p class="fh">Keep header row. At minimum include competitor and product columns.</p>
+      </div>`,
+      [['Cancel','x'],['Import','ok']], a => {
+        if(a !== 'ok') return true;
+        handleCsvText(el('compCsvText').value || '');
+        return true;
+      });
+  });
+}
+
+function parseCsvObjects(text){
+  const lines = splitCsvLines(text || '');
+  if(lines.length < 2) return [];
+  const headers = lines[0].map(h => normalizeCsvKey(h));
+  return lines.slice(1).filter(r => r.some(v => String(v).trim())).map(cols => {
+    const o = {};
+    headers.forEach((h, i) => { o[h] = (cols[i] == null ? '' : String(cols[i]).trim()); });
+    return o;
+  });
+}
+
+function normalizeCsvKey(key){
+  return String(key || '').trim().toLowerCase().replace(/\s+/g, '_');
+}
+
+function splitCsvLines(text){
+  const out = [];
+  let row = [];
+  let cell = '';
+  let q = false;
+  for(let i=0;i<text.length;i++){
+    const ch = text[i];
+    const nx = text[i+1];
+    if(ch === '"'){
+      if(q && nx === '"'){ cell += '"'; i++; }
+      else q = !q;
+      continue;
+    }
+    if(ch === ',' && !q){ row.push(cell); cell=''; continue; }
+    if((ch === '\n' || ch === '\r') && !q){
+      if(ch === '\r' && nx === '\n') i++;
+      row.push(cell); out.push(row); row=[]; cell='';
+      continue;
+    }
+    cell += ch;
+  }
+  if(cell.length || row.length){ row.push(cell); out.push(row); }
+  return out;
 }
 
 function renderLongTailPlan(){

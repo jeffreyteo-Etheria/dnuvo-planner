@@ -204,8 +204,9 @@ function sectionRows(sec){
       return [head, ...rows];
     }
     case 'compintel': {
+      const src = (S.compIntel && S.compIntel.length) ? S.compIntel : COMPETITOR_INTEL;
       const head = ['Competitor','Product','Product type','Channel','Currency','List price','Promo price','Observed at','Key message','Source'];
-      const rows = COMPETITOR_INTEL.map(r => [
+      const rows = src.map(r => [
         r.competitor, r.product, r.productType, r.channel, r.currency,
         r.listPrice || '', r.promoPrice || '', r.observedAt, r.keyMessage, r.source
       ]);

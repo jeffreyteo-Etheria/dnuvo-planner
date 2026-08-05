@@ -18,6 +18,7 @@ function load(){
   S.settings = Object.assign({}, DEFAULTS, S.settings || {});
   S.skus     = S.skus     || SKUS.map(s => Object.assign({}, s));
   S.months   = S.months   || MONTHS.map(m => ({ k:m.k, units:m.units, price:m.price }));
+  S.compIntel = S.compIntel || COMPETITOR_INTEL.map(r => Object.assign({}, r));
   S.kols     = S.kols     || [];
   S.requests = S.requests || [];
   S.checks   = S.checks   || {};
@@ -605,7 +606,7 @@ function renderApprovals(){
   const badge = el('reqBadge');
   badge.hidden = !pending.length; badge.textContent = pending.length;
 
-  el('reqList').innerHTML = S.requests.length
+  const listHtml = S.requests.length
     ? S.requests.slice().reverse().map(r => {
         const d = new Date(r.at);
         const stat = r.status==='pending'
@@ -626,6 +627,33 @@ function renderApprovals(){
         </div>`;
       }).join('')
     : `<p class="empty">No requests. When a team member proposes a change, it lands here.</p>`;
+
+  el('reqList').innerHTML = `<div class="req-tools">
+      <button class="btn-line sm" id="reqDlAll">Download all requests</button>
+      <button class="btn-line sm" id="reqDlOpen">Download open requests</button>
+    </div>${listHtml}`;
+
+  const buildReqRows = onlyOpen => {
+    const rows = [['Date','Status','Area','Field','From','To','Reason']];
+    (onlyOpen ? pending : S.requests).forEach(r => rows.push([
+      new Date(r.at).toLocaleDateString(), r.status, r.area, r.field, r.from, r.to, r.why
+    ]));
+    return rows;
+  };
+
+  const downloadReqCsv = onlyOpen => {
+    if(typeof toCSV !== 'function' || typeof dl !== 'function'){
+      toast('Download is not ready yet');
+      return;
+    }
+    const rows = buildReqRows(onlyOpen);
+    const suffix = onlyOpen ? 'open-requests' : 'all-requests';
+    dl(`dnuvo-${suffix}-${stamp()}.csv`, toCSV(rows), 'text/csv;charset=utf-8');
+    toast(onlyOpen ? 'Open requests downloaded' : 'All requests downloaded');
+  };
+
+  el('reqDlAll').addEventListener('click', () => downloadReqCsv(false));
+  el('reqDlOpen').addEventListener('click', () => downloadReqCsv(true));
 
   qsa('[data-ap]').forEach(b => b.addEventListener('click', () => {
     const r = S.requests.find(x=>x.id==b.dataset.ap); r.status='approved';
