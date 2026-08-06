@@ -394,6 +394,15 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
   background:var(--panel)}
 .po-warn{padding:11px 15px;background:var(--amber-lt);font-size:12px;color:var(--amber);line-height:1.55;
   border-top:1px solid var(--line)}
+.ai-tool-row{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding:11px 15px;border-top:1px solid var(--line)}
+.ai-tool-row .p-note{flex:1 1 100%;margin-bottom:2px}
+.week-count-label{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mute)}
+.week-count-label input{width:64px}
+.week-prompt{border:1px solid var(--line);border-radius:6px;margin-top:12px;overflow:hidden}
+.week-prompt .wp-h{display:flex;align-items:center;justify-content:space-between;padding:8px 13px;
+  background:var(--line-2);font-size:12.5px}
+.week-prompt pre{padding:13px;font-family:var(--m);font-size:11px;line-height:1.6;white-space:pre-wrap;
+  word-break:break-word;color:var(--ink-3);max-height:220px;overflow-y:auto}
 .apify{margin-top:13px;padding:11px 15px;background:var(--line-2);border-radius:6px;
   font-size:12.5px;color:var(--mute);display:flex;align-items:center;gap:11px;flex-wrap:wrap}
 .apify b{color:var(--ink)}
@@ -480,6 +489,34 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
 .mf input:focus,.mf select:focus,.mf textarea:focus{outline:none;border-color:var(--violet)}
 .mf .fh{font-size:11.5px;color:var(--faint);margin-top:4px;line-height:1.45}
 .mf2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.check-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.check-grid label{display:flex;align-items:center;gap:8px;font-size:13px;border:1px solid var(--line);
+  border-radius:6px;padding:8px 10px;background:var(--panel)}
+.check-grid label.on{border-color:var(--violet);background:var(--violet-lt)}
+.check-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.check-row select{border:1px solid var(--line);border-radius:6px;padding:6px 9px;font-size:12.5px}
+.split-panel .split-note{font-size:12px;color:var(--faint);margin-top:9px;line-height:1.5}
+.split-panel button{margin-top:9px}
+.sug-up{color:var(--violet)}
+
+.sched-view-toggle{display:flex;gap:6px}
+.sched-view-toggle .on{border-color:var(--violet);background:var(--violet-lt);color:var(--violet)}
+.sched-board{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.sched-col{border:1px solid var(--line);border-radius:8px;background:var(--line-2);
+  padding:10px;transition:border-color .15s}
+.sched-col.drag-over{border-color:var(--violet)}
+.sched-col-h{display:flex;align-items:center;justify-content:space-between;font-size:12px;
+  font-weight:700;letter-spacing:.03em;color:var(--mute);padding:2px 4px 9px}
+.sched-col-n{font-family:var(--m);color:var(--faint)}
+.sched-col-body{display:flex;flex-direction:column;gap:8px;min-height:60px}
+.sched-card{border:1px solid var(--line);border-radius:7px;padding:9px 11px;background:var(--panel);
+  cursor:grab;display:flex;flex-direction:column;gap:2px}
+.sched-card b{font-size:12.5px}
+.sched-card .sub{font-size:11px;color:var(--mute)}
+.sched-card .sc-date{font-family:var(--m);font-size:10.5px;color:var(--faint)}
+.sched-card.dragging{opacity:.4}
+.sched-empty{font-size:11.5px;color:var(--faint);text-align:center;padding:10px 0}
+@media (max-width:860px){ .sched-board{grid-template-columns:1fr 1fr} }
 
 .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:950;
   background:var(--ink);color:#fff;padding:11px 20px;border-radius:7px;font-size:13px;
@@ -784,6 +821,15 @@ tr.row-flash td{animation:rowflash 1.3s ease-in-out 2}
 /* ════════════════════════════════════════════════
    KOL — types, fit checklist, playbook, schedule
    ════════════════════════════════════════════════ */
+
+.kstage{display:none}
+.kstage.on{display:block}
+.kstage-tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.kstage-tab{border:1px solid var(--line);border-radius:8px;padding:9px 16px;background:var(--panel);
+  cursor:pointer;font-size:13px;font-weight:600;color:var(--mute);transition:border-color .15s,background .15s}
+.kstage-tab:hover{border-color:var(--violet-mid)}
+.kstage-tab.on{border-color:var(--violet);background:var(--violet-lt);color:var(--violet)}
+.kstage-tab span{display:block;font-size:11px;font-weight:400;margin-top:2px}
 
 .ktabs{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-bottom:14px}
 .ktab{text-align:left;border:1px solid var(--line);border-radius:8px;padding:14px 16px;

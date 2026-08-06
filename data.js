@@ -13,9 +13,38 @@ const DEFAULTS = {
   marginPct: 40,
   reinvestPct: 30,
   startMonth: 'July 2026',
-  shopDomain: 'https://dnuvo.com.sg',
-  shopPath: '/products/'      // Shopify default. Change if the store uses another pattern.
+  shopDomain: 'https://shop.dnuvo.com.sg',
+  shopPath: '/products/',      // Shopify default. Change if the store uses another pattern.
+  aiToolLinks: { higgsfield:'https://higgsfield.ai', maxfusion:'', gemini:'https://gemini.google.com' },
+  socialHandles: { shopee:'shopee.sg/d.nuvo', tiktok:'@d.nuvo_official', shopify:'shop.dnuvo.com.sg' },
+  platformsActive: { tiktok:true, instagram:true, facebook:false, shopee:true, lazada:false, shopify:true },
+  competitorUrls: [],
+  promoPeriods: {}
 };
+
+/* ── Kanban columns for the KOL schedule. Separate from `done` (which
+   still drives the existing table view's done/late styling) — this is
+   a genuine status progression a creator deliverable moves through. ── */
+const SCHED_BOARD = [
+  { k:'planned',   name:'Planned' },
+  { k:'confirmed', name:'Confirmed' },
+  { k:'live',      name:'Live' },
+  { k:'done',      name:'Done' }
+];
+
+/* ── Structured promo-period catalog. Campaign setup marks which of
+   these apply and to which month; media plan and calendar both read
+   from that single source instead of separate free-text fields.  ── */
+const PROMO_PERIODS = [
+  { k:'bau',     name:'BAU (always-on)',   mechanicNote:'Full price, always-on voucher — the floor-safe default.' },
+  { k:'payday',  name:'Payday window',     mechanicNote:'Late-month spend spike — align voucher pushes with SG payday cycles.' },
+  { k:'flash',   name:'Custom flash sale', mechanicNote:'Short, time-boxed live/marketplace mechanic — never below the price floor.' },
+  { k:'9.9',     name:'9.9 Mega Sale',     mechanicNote:'Marketplace mega-sale — heavier Shopee/TikTok weighting converts better.' },
+  { k:'10.10',   name:'10.10',             mechanicNote:'Secondary marketplace moment — smaller than 9.9/11.11, still worth a bundle push.' },
+  { k:'11.11',   name:'11.11 Mega Sale',   mechanicNote:'The year’s largest marketplace event — full voucher stack, heaviest in-platform weighting.' },
+  { k:'12.12',   name:'12.12',             mechanicNote:'Festive close-out — pair with clearance and gift-set framing.' },
+  { k:'cnyraya', name:'CNY / Raya',        mechanicNote:'Cultural gifting moment — bundle and gift-set framing over discount depth.' }
+];
 
 /* ── SKUs. cogs is admin-only; floor derives from it. ── */
 const SKUS = [
@@ -473,6 +502,78 @@ const BUYER_PERSONAS = [
   }
 ];
 
+/* ── Pre-determined brand-ambassador personas for the Content module.
+   Locked profiles so image/video prompts stay a consistent recurring
+   character rather than a new face every generation. ── */
+const BRAND_PERSONAS = [
+  {
+    id:'aera',
+    name:'Aera (아라)',
+    archetype:'The Athletic Armor',
+    age:23,
+    hometown:'Busan, South Korea',
+    discipline:'Urban track & field / marathoner',
+    aesthetic:'Earthy, raw, utilitarian, sharp',
+    look:'Teal-green tracksuit with white panels, white sneakers, long golden-brown wavy hair. Never posed — always captured in motion.',
+    backstory:'Grew up on Busan’s windy coast and spends about 70% of her day outdoors. A skincare skeptic for years — washed her face with whatever soap was in the gym locker room — until barrier damage and breakouts started affecting her confidence on the starting line. She did not want a 12-step routine; she wanted efficiency, protection and recovery.',
+    skinCondition:'Windburn and chapping from exposure, sweat-clogged pores, jawline breakouts from sweatband friction and overtraining stress, dehydration and dark circles after long-haul travel to races.',
+    tone:'Honest, motivational, slightly dry. Unfiltered — no posing, no polish.',
+    platforms:'TikTok (raw workout content), Instagram (training diary)',
+    palette:[{name:'Teal Green',hex:'#008080'},{name:'Olive Green',hex:'#4A5D23'},{name:'Concrete Grey',hex:'#808080'}],
+    hashtags:['#AeraGlows','#SkinArmor','#FreshCeramide'],
+    tagline:'Sweat is just weakness leaving the body, but it shouldn’t wreck your skin barrier.',
+    contentFocus:['Brand trust and proof','Emotional'],
+    eeatPillar:'Experience'
+  },
+  {
+    id:'kaia',
+    name:'Kaia (카이아)',
+    archetype:'The Camera-Ready Canvas',
+    age:21,
+    hometown:'Seoul, South Korea',
+    discipline:'K-pop trainee / dance creator / actress',
+    aesthetic:'Vibrant, trendy, aspirational, polished',
+    look:'Pink color-block crop top, chunky sneakers, short dark bob.',
+    backstory:'Based in Seoul’s entertainment district — her days are a blur of dance rehearsals, vocal coaching, auditions and late-night editing under harsh ring lights. Unlike Aera, she has always cared about skincare, but struggles to heal it from heavy stage makeup, dance-floor sweat and lost sleep. Glass skin is a professional requirement for her, not vanity.',
+    skinCondition:'Pores clogged by makeup and sweat, stress breakouts (an audition-day blemish is her defining crisis story), puffiness and dark circles from blue-light late-night edits, dehydration from harsh LED sets.',
+    tone:'Bubbly, encouraging, deeply connected to her fanbase — shares the glamorous highs and the exhausting behind-the-scenes lows.',
+    platforms:'TikTok (dance trends, GRWM audition vlogs), Instagram (curated aesthetic mood board)',
+    palette:[{name:'Vibrant Pink',hex:'#FF66B2'},{name:'Studio Black',hex:'#1A1A1A'},{name:'Medium Purple',hex:'#9370DB'}],
+    hashtags:['#KaiaShines','#GlassSkin'],
+    tagline:'The best filter is a flawless skin barrier.',
+    contentFocus:['Brand trust and proof','Educational'],
+    eeatPillar:'Trustworthiness'
+  },
+  {
+    id:'mira',
+    name:'Mira',
+    archetype:'The Formulation Realist',
+    age:29,
+    hometown:'Singapore',
+    discipline:'Former pharmaceutical QC analyst, now independent skincare reviewer',
+    aesthetic:'Understated, credible, unpolished-but-articulate — not a white coat, not a set',
+    look:'Neutral tones, no performative makeup. Reads ingredient labels on camera, films in ordinary rooms, never a studio backdrop.',
+    backstory:'Spent years in pharmaceutical quality control before deciding consumers deserved someone honest translating INCI lists into plain language. She got tired of watching marketing outpace the data — so she started reviewing skincare the way she’d review a batch record.',
+    skinCondition:'Mild adult acne and combination skin. She discusses her own patch-test failures on camera — her visibly imperfect skin is the credibility, not a liability.',
+    tone:'Candid, evidence-first, calls out overclaiming — including d.nuvo’s own claims if unproven. That willingness to push back is what makes her trusted.',
+    platforms:'YouTube and TikTok — long-form ingredient breakdowns and honest-review format',
+    palette:[{name:'Off-White',hex:'#F5F5F5'},{name:'Amber Glass',hex:'#B8860B'}],
+    hashtags:['#IngredientHonesty','#FormulationFacts'],
+    tagline:'I’ve read the study. Let’s see if the marketing matches it.',
+    contentFocus:['Educational','Brand trust and proof'],
+    eeatPillar:'Expertise'
+  }
+];
+
+/* ── Content formats the prompt builder can target ── */
+const CONTENT_FORMATS = [
+  { k:'ingredient-explainer', name:'Ingredient explainer (image carousel)', focus:'Educational' },
+  { k:'mechanism-demo',       name:'Mechanism / absorption demo (short video)', focus:'Educational' },
+  { k:'before-after',         name:'Before/after proof (image)', focus:'Brand trust and proof' },
+  { k:'real-skin-review',     name:'Real-skin testimonial (video)', focus:'Brand trust and proof' },
+  { k:'myth-bust',            name:'Myth-busting explainer (short video)', focus:'Educational' }
+];
+
 /* ── Independent module catalog (orchestrated from AI Strategy) ── */
 const MODULE_CATALOG = [
   { id:'strategy',   name:'Strategy',          view:'strategy',   role:'All roles', defaultOn:true },
@@ -480,6 +581,7 @@ const MODULE_CATALOG = [
   { id:'pricing',    name:'SKU pricing',       view:'pricing',    role:'Admin + planning', defaultOn:true },
   { id:'media',      name:'Media plan',        view:'media',      role:'Media planner', defaultOn:true },
   { id:'kol',        name:'KOL hub',           view:'kol',        role:'Social / KOL manager', defaultOn:true },
+  { id:'content',    name:'Content module',    view:'content',    role:'Content creative manager', defaultOn:true },
   { id:'events',     name:'Retail and events', view:'events',     role:'Event and retail lead', defaultOn:true },
   { id:'calendar',   name:'Calendar',          view:'calendar',   role:'All roles', defaultOn:true },
   { id:'report',     name:'Reporting',         view:'report',     role:'All roles', defaultOn:true },
@@ -762,7 +864,8 @@ const METRICS = [
 const PROPOSABLE = {
   sku:    ['sale','handle','url'],
   bundle: ['price','handle','url'],
-  month:  ['units','price']
+  month:  ['units','price'],
+  kol:    ['fee','rate']
 };
 
 const FIELD_LABELS = {

@@ -8,6 +8,15 @@
    ════════════════════════════════════════════════ */
 
 let kolTab = 'ugc';
+let kolStage = 'creators';
+let schedView = 'table';
+function schedBoardOf(e){ return e.board || (e.done ? 'done' : 'planned'); }
+const KOL_STAGE_TABS = [
+  { k:'creators', name:'Creators', desc:'Source, verify, select' },
+  { k:'content',  name:'Content',  desc:'Brief and coordinate' },
+  { k:'post',     name:'Post',     desc:'Schedule and deliver' },
+  { k:'kpi',      name:'KPI',      desc:'Benchmark vs actual' }
+];
 
 /* ── evaluation ── */
 function fitScore(k){
@@ -48,18 +57,41 @@ function isLocked(k){
 function canDelete(k){
   return isAdmin() || !isLocked(k);
 }
+/* Pending pricing proposal flag — mirrors proposals.js's cell() styling,
+   since fee/rate are edited via the creator modal, not an inline cell. */
+function kolPendingBadge(k, field){
+  if(!k || !k.id) return '';
+  const p = pendingFor('kol', k.id, field);
+  if(!p) return '';
+  return isAdmin()
+    ? ` <span class="prop-flag" data-prop="${p.id}" title="Proposed by the team — click to decide">
+        <span class="pf-dot"></span>${esc(S.settings.cur)}${esc(p.to)}</span>`
+    : ` <span class="prop-mine" title="Waiting on an administrator">→ ${esc(S.settings.cur)}${esc(p.to)}</span>`;
+}
 
 /* ── render ── */
 function renderKol(){
+  renderKolStageTabs();
   renderKolTabs();
   renderKolPipe();
   renderKolTable();
   renderKolActivation();
-  renderCompPulse();
   renderLongTailPlan();
   renderCrm();
   renderKolSchedule();
+  renderKolScheduleBoard();
   if(typeof refreshSortable === 'function'){ refreshSortable(); injectPanelExports(); }
+}
+
+function renderKolStageTabs(){
+  const box = el('kolStageTabs'); if(!box) return;
+  box.innerHTML = KOL_STAGE_TABS.map(s => `<button class="kstage-tab ${kolStage===s.k?'on':''}" data-kstage="${s.k}">
+    ${esc(s.name)}<span>${esc(s.desc)}</span></button>`).join('');
+  qsa('[data-kstage]', box).forEach(b => b.addEventListener('click', () => {
+    kolStage = b.dataset.kstage;
+    renderKolStageTabs();
+  }));
+  qsa('.kstage').forEach(sec => sec.classList.toggle('on', sec.dataset.stage === kolStage));
 }
 
 function renderKolTabs(){
@@ -136,7 +168,7 @@ function renderKolTable(){
         <td class="n">${v(k.posts)}</td>
         <td style="font-size:12px">${v(k.audience)}</td>
         <td style="font-size:12px">${v(k.contact)}</td>
-        <td class="n">${k.rate?esc(S.settings.cur+k.rate):'<span class="nv">—</span>'}</td>
+        <td class="n">${k.rate?esc(S.settings.cur+k.rate):'<span class="nv">—</span>'}${kolPendingBadge(k,'rate')}</td>
         <td>${stageSel}</td><td>${acts}</td></tr>`;
     }
 
@@ -170,6 +202,7 @@ function renderKolTable(){
   qsa('[data-fit]').forEach(b => b.addEventListener('click', () => fitForm(+b.dataset.fit)));
   qsa('[data-sched]').forEach(b => b.addEventListener('click', () => schedForm(+b.dataset.sched)));
   qsa('[data-del]').forEach(b => b.addEventListener('click', () => delKol(+b.dataset.del)));
+  if(typeof wireCells === 'function') wireCells();
 }
 
 /* ── add / edit ── */
@@ -196,17 +229,26 @@ function kolForm(idx, pre){
     ${f('kContact','Contact',k.contact,'email, agency, or DM open')}
     ${f('kSource','Source URL',k.source,'where the figures were verified')}`;
 
+  const pricingHint = field => {
+    if(idx < 0 || !k.id) return '';
+    const p = pendingFor('kol', k.id, field);
+    if(!p) return '';
+    return isAdmin()
+      ? `A team change to ${S.settings.cur}${esc(p.to)} is awaiting your decision — see Pending changes.`
+      : `Your proposed change to ${S.settings.cur}${esc(p.to)} is awaiting an administrator.`;
+  };
+
   const ugcOnly = `
     <div class="mf2">${f('kEr','Engagement rate %',k.er,'blank if unverified')}
       ${f('kPosts','Total posts',k.posts)}</div>
-    ${f('kRate','Rate per post',k.rate,'in ' + S.settings.cur)}`;
+    ${f('kRate','Rate per post',k.rate,'in ' + S.settings.cur, pricingHint('rate'))}`;
 
   const liveOnly = `
     <div class="mf2">${f('kViews','Average views per stream',k.avgViews,'blank if unverified')}
       ${f('kGmv','Average GMV per stream',k.avgGmv,'blank if unverified')}</div>
     <div class="mf2">${f('kGpm','GPM if known',k.gpm,'leave blank to calculate','Calculated as GMV ÷ views × 1,000 when both are entered')}
       ${f('kRet','Average view time',k.retention,'e.g. 6m 20s')}</div>
-    ${f('kFee','Agreed fixed fee',k.fee,'in ' + S.settings.cur)}`;
+    ${f('kFee','Agreed fixed fee',k.fee,'in ' + S.settings.cur, pricingHint('fee'))}`;
 
   const body = `
     <div class="mf"><label>Creator type</label>
@@ -235,26 +277,42 @@ function kolForm(idx, pre){
     const h = el('kHandle').value.trim();
     if(!h){ toast('A handle is required'); return false; }
     const picked = qs('input[name=ktype]:checked');
-    const rec = Object.assign({}, idx>=0 ? S.kols[idx] : {}, {
+    const existing = idx>=0 ? S.kols[idx] : null;
+    const rec = Object.assign({}, existing || {}, {
+      id: existing ? (existing.id || ('K'+Date.now().toString(36)+Math.random().toString(36).slice(2,5))) : ('K'+Date.now().toString(36)+Math.random().toString(36).slice(2,5)),
       type: picked ? picked.value : type,
       handle: h.startsWith('@') ? h : '@'+h,
       platform: el('kPlat').value, name: el('kName').value.trim(),
       tier: el('kTier').value, followers: el('kFoll').value.trim(),
       audience: el('kAud').value.trim(), contact: el('kContact').value.trim(),
       source: el('kSource').value.trim(), notes: el('kNotes').value.trim(),
-      stage: idx>=0 ? S.kols[idx].stage : 'sourced'
+      stage: existing ? existing.stage : 'sourced'
     });
+    // Pricing on an existing record needs admin approval — team edits are held
+    // as a proposal, exactly like SKU/bundle/month prices already are.
+    const pricingChanges = [];
+    const gatePricing = (field, next, label) => {
+      const from = (existing && existing[field]) || '';
+      if(!isAdmin() && existing && next !== from){
+        pricingChanges.push({ field, from, to: next, label });
+        return from; // live value stays put until approved
+      }
+      return next;
+    };
     if((picked?picked.value:type) === 'ugc'){
       rec.er = el('kEr').value.trim(); rec.posts = el('kPosts').value.trim();
-      rec.rate = el('kRate').value.trim();
+      rec.rate = gatePricing('rate', el('kRate').value.trim(), (existing?existing.handle:h) + ' — rate per post');
     } else {
       rec.avgViews = el('kViews').value.trim(); rec.avgGmv = el('kGmv').value.trim();
       rec.gpm = el('kGpm').value.trim(); rec.retention = el('kRet').value.trim();
-      rec.fee = el('kFee').value.trim(); rec.fit = rec.fit || {};
+      rec.fee = gatePricing('fee', el('kFee').value.trim(), (existing?existing.handle:h) + ' — agreed fixed fee');
+      rec.fit = rec.fit || {};
     }
     if(idx>=0) S.kols[idx] = rec; else S.kols.push(rec);
+    pricingChanges.forEach(c => propose('kol', rec.id, c.field, c.from, c.to, c.label));
     save(); renderKol(); renderOverview();
-    toast(idx>=0 ? 'Creator updated' : 'Creator added');
+    toast(pricingChanges.length ? 'Sent for approval — pricing needs an administrator to confirm'
+      : (idx>=0 ? 'Creator updated' : 'Creator added'));
     return true;
   });
 
@@ -369,7 +427,7 @@ function schedForm(idx){
         id:'E'+Date.now().toString(36), kol:k.handle, type,
         what: el('scType').value, date: el('scDate').value, time: el('scTime').value,
         owner: el('scOwner').value.trim(), note: el('scNote').value.trim(),
-        done:false, at:new Date().toISOString()
+        done:false, board:'planned', at:new Date().toISOString()
       });
       if(k.stage === 'approved') k.stage = 'scheduled';
       save(); renderKol();
@@ -426,6 +484,59 @@ function renderKolSchedule(){
 
   const dl = el('schedAllIcs');
   if(dl) dl.onclick = () => downloadIcs(null);
+}
+
+/* Kanban view of the same S.schedule — drag a card between columns to
+   move it through SCHED_BOARD. Dragging into/out of "Done" also syncs
+   the `done` boolean so the Table view's done/late styling stays in
+   sync either way. */
+function renderKolScheduleBoard(){
+  const box = el('kolSchedBoard'); if(!box) return;
+  const all = S.schedule || [];
+
+  box.innerHTML = `<div class="sched-board">${SCHED_BOARD.map(col => {
+    const cards = all.filter(e => schedBoardOf(e) === col.k);
+    return `<div class="sched-col" data-col="${col.k}">
+      <div class="sched-col-h">${esc(col.name)}<span class="sched-col-n">${cards.length}</span></div>
+      <div class="sched-col-body" data-coldrop="${col.k}">
+        ${cards.map(e => `<div class="sched-card" draggable="true" data-cardid="${e.id}">
+          <b>${esc(e.kol)}</b>
+          <span class="sub">${esc(e.what)}</span>
+          <span class="sc-date">${esc(e.date)}${e.time?' · '+esc(e.time):''}</span>
+        </div>`).join('') || '<p class="sched-empty">Nothing here</p>'}
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+
+  qsa('.sched-card', box).forEach(card => {
+    card.addEventListener('dragstart', ev => {
+      ev.dataTransfer.setData('text/plain', card.dataset.cardid);
+      ev.dataTransfer.effectAllowed = 'move';
+      card.classList.add('dragging');
+    });
+    card.addEventListener('dragend', () => card.classList.remove('dragging'));
+  });
+
+  qsa('[data-coldrop]', box).forEach(col => {
+    col.addEventListener('dragover', ev => {
+      ev.preventDefault();
+      col.closest('.sched-col').classList.add('drag-over');
+    });
+    col.addEventListener('dragleave', () => col.closest('.sched-col').classList.remove('drag-over'));
+    col.addEventListener('drop', ev => {
+      ev.preventDefault();
+      col.closest('.sched-col').classList.remove('drag-over');
+      const id = ev.dataTransfer.getData('text/plain');
+      const e = (S.schedule||[]).find(x => x.id === id);
+      if(!e) return;
+      const colKey = col.dataset.coldrop;
+      e.board = colKey;
+      e.done = (colKey === 'done');
+      save();
+      renderKolSchedule();
+      renderKolScheduleBoard();
+    });
+  });
 }
 
 /* .ics so it drops into any calendar app */
@@ -571,152 +682,6 @@ function renderPlaybook(){
     </div>`;
 }
 
-function renderCompPulse(){
-  const box = el('compPulse'); if(!box) return;
-  const compRows = (S.compIntel && S.compIntel.length) ? S.compIntel : COMPETITOR_INTEL;
-  const priceTag = (row, key) => {
-    const v = row[key]; if(!v) return '—';
-    return (row.currency === 'USD' ? '$' : 'S$') + v;
-  };
-  const rows = compRows.map(r => `
-      <tr>
-        <td><b>${esc(r.competitor)}</b><span class="sub">${esc(r.product)}</span></td>
-        <td>${esc(r.productType)}</td>
-        <td>${esc(r.channel)}</td>
-        <td class="n">${priceTag(r, 'listPrice')}</td>
-        <td class="n">${priceTag(r, 'promoPrice')}</td>
-        <td>${esc(r.keyMessage)}</td>
-        <td><a class="src-ln" href="${esc(r.source)}" target="_blank" rel="noopener">Source</a></td>
-      </tr>`).join('');
-
-  box.innerHTML = `
-    <div class="intel-head">
-      <span>Observed ${esc((compRows[0]||{}).observedAt || '')} · refresh weekly before decisions</span>
-      <button class="btn-line sm" id="expCompCsv">Download tracker CSV</button>
-      <button class="btn-line sm" id="impCompCsv">Upload CSV</button>
-      <button class="btn-line sm" id="pasteCompCsv">Paste CSV</button>
-      <input type="file" id="impCompFile" accept=".csv,text/csv" hidden>
-    </div>
-    <div class="tb-wrap"><table class="tb" id="compTable">
-      <thead><tr><th>Competitor</th><th>Product type</th><th>Channel</th><th class="n">List</th><th class="n">Promo</th><th>Key message</th><th>Link</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table></div>
-
-    <div class="msg-stack">
-      ${DNUVO_MESSAGE_STACK.map(m => `<div class="ms-card"><span>${esc(m.lane)}</span><b>${esc(m.text)}</b></div>`).join('')}
-    </div>
-
-    <div class="gap-note">
-      <b>Market gap focus:</b> most competitors lean on generic hydration language. d.nuvo should lead with delivery depth,
-      mechanism education, and claim-safe proof architecture in creator briefs.
-    </div>`;
-
-  const dlBtn = el('expCompCsv');
-  if(dlBtn) dlBtn.addEventListener('click', () => {
-    if(typeof toCSV !== 'function' || typeof dl !== 'function'){
-      toast('Export is not available right now');
-      return;
-    }
-    const csvRows = [
-      ['competitor','product','product_type','channel','currency','list_price','promo_price','observed_at','key_message','source'],
-      ...compRows.map(r => [r.competitor,r.product,r.productType,r.channel,r.currency,r.listPrice,r.promoPrice,r.observedAt,r.keyMessage,r.source])
-    ];
-    dl('dnuvo-competitor-tracker-' + stamp() + '.csv', toCSV(csvRows), 'text/csv;charset=utf-8');
-    toast('Competitor tracker downloaded');
-  });
-
-  const applyImportedRows = rowsIn => {
-    const normalized = rowsIn.filter(r => r.competitor && r.product).map(r => ({
-      competitor: r.competitor,
-      product: r.product,
-      productType: r.product_type || r.producttype || r.category || 'Ceramide / barrier',
-      channel: r.platform_channel || r.channel || 'Marketplace',
-      currency: (r.currency || 'SGD').toUpperCase(),
-      listPrice: r.list_price || r.listprice || '',
-      promoPrice: r.promo_price || r.promoprice || '',
-      observedAt: r.week_start || r.observed_at || new Date().toISOString().slice(0,10),
-      keyMessage: [r.key_message_1, r.key_message_2, r.key_message].filter(Boolean).join(' | '),
-      source: r.source_url || r.source || ''
-    }));
-    if(!normalized.length){
-      toast('No valid competitor rows found');
-      return;
-    }
-    S.compIntel = normalized;
-    save();
-    renderCompPulse();
-    toast('Competitor CSV imported');
-  };
-
-  const handleCsvText = text => {
-    const rowsIn = parseCsvObjects(text);
-    applyImportedRows(rowsIn);
-  };
-
-  el('impCompCsv').addEventListener('click', () => el('impCompFile').click());
-  el('impCompFile').addEventListener('change', e => {
-    const f = e.target.files && e.target.files[0];
-    if(!f) return;
-    const reader = new FileReader();
-    reader.onload = () => handleCsvText(String(reader.result || ''));
-    reader.readAsText(f);
-    e.target.value = '';
-  });
-
-  el('pasteCompCsv').addEventListener('click', () => {
-    modal('Paste competitor CSV', `
-      <div class="mf"><label>CSV content</label>
-        <textarea id="compCsvText" rows="12" placeholder="Paste CSV from weekly-competitor-tracker.csv"></textarea>
-        <p class="fh">Keep header row. At minimum include competitor and product columns.</p>
-      </div>`,
-      [['Cancel','x'],['Import','ok']], a => {
-        if(a !== 'ok') return true;
-        handleCsvText(el('compCsvText').value || '');
-        return true;
-      });
-  });
-}
-
-function parseCsvObjects(text){
-  const lines = splitCsvLines(text || '');
-  if(lines.length < 2) return [];
-  const headers = lines[0].map(h => normalizeCsvKey(h));
-  return lines.slice(1).filter(r => r.some(v => String(v).trim())).map(cols => {
-    const o = {};
-    headers.forEach((h, i) => { o[h] = (cols[i] == null ? '' : String(cols[i]).trim()); });
-    return o;
-  });
-}
-
-function normalizeCsvKey(key){
-  return String(key || '').trim().toLowerCase().replace(/\s+/g, '_');
-}
-
-function splitCsvLines(text){
-  const out = [];
-  let row = [];
-  let cell = '';
-  let q = false;
-  for(let i=0;i<text.length;i++){
-    const ch = text[i];
-    const nx = text[i+1];
-    if(ch === '"'){
-      if(q && nx === '"'){ cell += '"'; i++; }
-      else q = !q;
-      continue;
-    }
-    if(ch === ',' && !q){ row.push(cell); cell=''; continue; }
-    if((ch === '\n' || ch === '\r') && !q){
-      if(ch === '\r' && nx === '\n') i++;
-      row.push(cell); out.push(row); row=[]; cell='';
-      continue;
-    }
-    cell += ch;
-  }
-  if(cell.length || row.length){ row.push(cell); out.push(row); }
-  return out;
-}
-
 function renderLongTailPlan(){
   const box = el('longTailPlan'); if(!box) return;
   box.innerHTML = `<div class="tb-wrap"><table class="tb" id="longTailTable">
@@ -758,3 +723,17 @@ function renderKolActivation(){
     <tbody>${rows}</tbody>
   </table></div>`;
 }
+
+/* Schedule Table/Board toggle — static buttons, wired once. */
+const schedViewTableBtn = el('schedViewTable');
+const schedViewBoardBtn = el('schedViewBoard');
+function setSchedView(v){
+  schedView = v;
+  if(schedViewTableBtn) schedViewTableBtn.classList.toggle('on', v === 'table');
+  if(schedViewBoardBtn) schedViewBoardBtn.classList.toggle('on', v === 'board');
+  const t = el('kolSched'), b = el('kolSchedBoard');
+  if(t) t.hidden = v !== 'table';
+  if(b) b.hidden = v !== 'board';
+}
+if(schedViewTableBtn) schedViewTableBtn.addEventListener('click', () => setSchedView('table'));
+if(schedViewBoardBtn) schedViewBoardBtn.addEventListener('click', () => setSchedView('board'));

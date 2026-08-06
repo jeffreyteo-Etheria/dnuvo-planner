@@ -53,6 +53,9 @@ function applyProposal(p){
   } else if(p.type === 'month'){
     const m = S.months.find(x => x.k === p.recId);
     if(m) m[p.field] = num(p.to);
+  } else if(p.type === 'kol'){
+    const k = (S.kols||[]).find(x => x.id === p.recId);
+    if(k) k[p.field] = p.to;
   }
   p.status = 'approved';
   p.closedAt = new Date().toISOString();
@@ -249,7 +252,7 @@ function renderProposals(){
   }));
   qsa('[data-pgo]').forEach(b => b.addEventListener('click', () => {
     const p = S.proposals.find(x=>x.id===b.dataset.pgo);
-    go(p.type === 'month' ? 'media' : 'pricing');
+    go(p.type === 'month' ? 'media' : p.type === 'kol' ? 'kol' : 'pricing');
     setTimeout(() => {
       const t = qs(`[data-cell="${p.type}|${p.recId}|${p.field}"]`);
       if(t){

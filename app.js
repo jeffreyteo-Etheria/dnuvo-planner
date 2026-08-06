@@ -164,10 +164,39 @@ function computeBudget(){
     const profit = rev * margin;
     const budget = i === 0 ? st.baseBudget : st.baseBudget + prev * reinvest;
     prev = profit;
+    const split = (S.splitOverrides && S.splitOverrides[m.k]) || meta.split;
     const ch = {};
-    Object.keys(meta.split).forEach(k => ch[k] = budget * meta.split[k]);
-    return { k:m.k, label:meta.label, units:m.units, price:m.price, rev, profit, budget, ch, meta };
+    Object.keys(meta.split).forEach(k => ch[k] = budget * (split[k] ?? meta.split[k]));
+    return { k:m.k, label:meta.label, units:m.units, price:m.price, rev, profit, budget, ch, meta, split };
   });
+}
+
+/* Suggested channel split for a month — starts from the authored static
+   weights, then shifts share toward the marketplace channels (shopee,
+   tiktok) and away from search/social retargeting (google, meta) when
+   that month has an active marketplace promo period tagged in Campaign
+   setup. In-platform flash/mega-sale mechanics convert better inside
+   the marketplace itself during a tagged window than channels that
+   send traffic away from it. A clear, explainable heuristic — not a
+   black box — and always editable by admin via "Apply to this month". */
+function recommendSplit(monthIndex){
+  const meta = MONTHS[monthIndex];
+  const base = Object.assign({}, meta.split);
+  const promo = (S.settings.promoPeriods || {});
+  const marketplaceActive = ['flash','9.9','10.10','11.11','12.12']
+    .some(k => promo[k] && promo[k].active && promo[k].month === meta.k);
+  if(!marketplaceActive) return base;
+
+  const SHIFT = 0.06; // move 6 points of share, split evenly from google/meta into shopee/tiktok
+  const out = Object.assign({}, base);
+  const donors = ['google','meta'].filter(k => (out[k]||0) > 0);
+  if(!donors.length) return base;
+  const perDonor = Math.min(SHIFT / donors.length, ...donors.map(k => out[k]));
+  donors.forEach(k => { out[k] = +(out[k] - perDonor).toFixed(3); });
+  const taken = perDonor * donors.length;
+  const recipients = ['shopee','tiktok'].filter(k => k in out);
+  recipients.forEach(k => { out[k] = +(out[k] + taken/recipients.length).toFixed(3); });
+  return out;
 }
 
 /* ═══════════ OVERVIEW ═══════════ */
@@ -246,7 +275,90 @@ function renderOverview(){
 }
 
 /* ═══════════ STRATEGY ═══════════ */
+/* ── Campaign setup — one consolidated admin panel. Media plan's split
+   recommendation, the calendar's promo panel, and brand pulse's
+   competitor takeaways all read from S.settings written here.      ── */
+function renderCampaignSetup(){
+  const box = el('campaignSetup');
+  if(!box || !isAdmin()) return;
+  S.settings.socialHandles = S.settings.socialHandles || {};
+  S.settings.platformsActive = S.settings.platformsActive || {};
+  S.settings.promoPeriods = S.settings.promoPeriods || {};
+  S.settings.competitorUrls = S.settings.competitorUrls || [];
+
+  const heroSkus = S.skus.filter(s => s.role === 'Hero');
+  const platformList = [['tiktok','TikTok'],['instagram','Instagram'],['facebook','Facebook'],
+    ['shopee','Shopee'],['lazada','Lazada'],['shopify','Shopify']];
+
+  box.innerHTML = `
+    <div class="fgrid">
+      <label>Brand URL<input data-cs="shopDomain" value="${esc(S.settings.shopDomain)}"></label>
+      <label>Location focus<input data-cs="market" value="${esc(S.settings.market)}"></label>
+      <label>Shopee handle<input data-csh="shopee" value="${esc(S.settings.socialHandles.shopee||'')}"></label>
+      <label>TikTok handle<input data-csh="tiktok" value="${esc(S.settings.socialHandles.tiktok||'')}"></label>
+    </div>
+
+    <div class="mf" style="margin-top:13px">
+      <label>Competitor info URLs — one per line</label>
+      <textarea id="csCompUrls" rows="3" placeholder="shopee.sg/cosrx.official">${esc((S.settings.competitorUrls||[]).join('\n'))}</textarea>
+    </div>
+
+    <div class="mf">
+      <label>Hero SKUs and bundles</label>
+      <p class="fh">${heroSkus.map(s=>esc(s.name)).join(', ') || 'None flagged Hero yet'} ·
+        ${BUNDLES.map(b=>esc(b.name)).join(', ')}
+        — change hero status per SKU in Pricing.</p>
+    </div>
+
+    <div class="mf">
+      <label>Platforms to activate</label>
+      <div class="check-grid">${platformList.map(([k,name]) => `
+        <label class="${S.settings.platformsActive[k]?'on':''}">
+          <input type="checkbox" data-csp="${k}" ${S.settings.platformsActive[k]?'checked':''}>${esc(name)}</label>`).join('')}</div>
+    </div>
+
+    <div class="mf">
+      <label>Promotional periods in range</label>
+      <div class="check-grid">${PROMO_PERIODS.map(p => {
+        const cfg = S.settings.promoPeriods[p.k] || { active:false, month:'M1' };
+        return `<label class="${cfg.active?'on':''}">
+          <span class="check-row">
+            <input type="checkbox" data-csr="${p.k}" ${cfg.active?'checked':''}>${esc(p.name)}
+            ${cfg.active ? `<select data-csrm="${p.k}">${MONTHS.map(m=>`<option value="${m.k}" ${cfg.month===m.k?'selected':''}>${m.k}</option>`).join('')}</select>` : ''}
+          </span></label>`;
+      }).join('')}</div>
+    </div>`;
+
+  qsa('[data-cs]', box).forEach(i => i.addEventListener('change', () => {
+    S.settings[i.dataset.cs] = i.value.trim(); save(); renderAll();
+  }));
+  qsa('[data-csh]', box).forEach(i => i.addEventListener('change', () => {
+    S.settings.socialHandles[i.dataset.csh] = i.value.trim(); save(); renderAll();
+  }));
+  const compUrls = el('csCompUrls');
+  if(compUrls) compUrls.addEventListener('change', () => {
+    S.settings.competitorUrls = compUrls.value.split('\n').map(s=>s.trim()).filter(Boolean);
+    save();
+  });
+  qsa('[data-csp]', box).forEach(c => c.addEventListener('change', () => {
+    S.settings.platformsActive[c.dataset.csp] = c.checked; save(); renderCampaignSetup();
+  }));
+  qsa('[data-csr]', box).forEach(c => c.addEventListener('change', () => {
+    const k = c.dataset.csr;
+    const prev = S.settings.promoPeriods[k] || { month:'M1' };
+    S.settings.promoPeriods[k] = { active:c.checked, month:prev.month || 'M1' };
+    save(); renderAll();
+  }));
+  qsa('[data-csrm]', box).forEach(s => s.addEventListener('change', () => {
+    const k = s.dataset.csrm;
+    S.settings.promoPeriods[k] = S.settings.promoPeriods[k] || { active:true };
+    S.settings.promoPeriods[k].month = s.value;
+    save(); renderAll();
+  }));
+}
+
 function renderStrategy(){
+  renderCampaignSetup();
   el('phaseTable').innerHTML = `<thead><tr><th>Phase</th><th>Months</th><th>Focus</th>
       <th>What happens</th><th>Return</th><th>Gate</th></tr></thead><tbody>` +
     PHASES.map(p => `<tr>
@@ -268,6 +380,66 @@ function renderStrategy(){
   }
 }
 
+/* Per-channel margin/GPM signal for the site audit — built only from data
+   the app already has (media split weights, KOL platform GPM, SKU margin).
+   Shopify has no paid-media split or KOL platform in this app, so its
+   share/GPM stay '—' rather than inventing a number. */
+function channelSignal(){
+  const splitKeyMap = { shopee:'shopee', tiktok:'tiktok', shopify:null };
+  const platformMap = { shopee:['Shopee Live'], tiktok:['TikTok'], shopify:[] };
+  const out = {};
+  ['shopee','tiktok','shopify'].forEach(ch => {
+    const sk = splitKeyMap[ch];
+    let share = null, shareTxt = '—';
+    if(sk){
+      const shares = MONTHS.map(m => m.split[sk] || 0);
+      share = shares.reduce((a,b)=>a+b,0) / shares.length;
+      shareTxt = Math.round(share*100) + '% of media budget (avg)';
+    }
+    const plats = platformMap[ch] || [];
+    const kolsOn = (S.kols||[]).filter(k => plats.includes(k.platform) && (k.gpm || (k.avgGmv && k.avgViews)));
+    let gpm = 0, gpmTxt = '—';
+    if(kolsOn.length){
+      gpm = kolsOn.reduce((a,k)=>a+computeGpm(k),0) / kolsOn.length;
+      gpmTxt = '$' + Math.round(gpm).toLocaleString() + ' avg creator GPM';
+    }
+    out[ch] = { share, shareTxt, gpm, gpmTxt };
+  });
+  return out;
+}
+
+/* Rule-based competitor → monthly-strategy takeaway. Ties each
+   competitor's channel emphasis to whichever month has a marketplace
+   promo period tagged in Campaign setup, so the read is actionable
+   against the actual plan rather than generic advice. */
+function competitorTakeaways(){
+  const rows = (S.compIntel && S.compIntel.length) ? S.compIntel : COMPETITOR_INTEL;
+  const promoPeriods = S.settings.promoPeriods || {};
+  const marketplaceKeys = ['flash','9.9','10.10','11.11','12.12'];
+  const taggedMonth = marketplaceKeys
+    .map(k => promoPeriods[k])
+    .find(cfg => cfg && cfg.active && cfg.month);
+  return rows.map(r => {
+    const isMarketplace = /shopee|tiktok|lazada/i.test(r.channel || '');
+    let action;
+    if(isMarketplace && taggedMonth){
+      action = `${taggedMonth.month}: match proof density (reviews, before/after) against ${r.competitor}'s ${r.channel} push — do not chase their promo price, chase their evidence.`;
+    } else if(isMarketplace){
+      action = `Monitor ${r.competitor}'s ${r.channel} pricing weekly — no marketplace promo period is tagged yet in Campaign setup.`;
+    } else {
+      action = `${r.competitor} is ${r.channel}-led — counter with Shopify science-page depth and lifecycle proof, not marketplace mechanics.`;
+    }
+    return { competitor:r.competitor, channel:r.channel, action };
+  });
+}
+
+function blendedSkuMargin(){
+  const withMargin = (S.skus||[]).filter(s => s.sale);
+  if(!withMargin.length) return 0;
+  const pct = withMargin.reduce((a,s)=>a+((s.sale-s.cogs)/s.sale),0) / withMargin.length;
+  return Math.round(pct*100);
+}
+
 function renderBrandPulse(){
   const guide = el('bpGuide');
   if(guide){
@@ -282,21 +454,12 @@ function renderBrandPulse(){
     </div>`;
   }
 
-  const watch = el('bpWatch');
-  if(watch){
-    const rows = (S.compIntel && S.compIntel.length) ? S.compIntel : COMPETITOR_INTEL;
-    watch.innerHTML = `<div class="tb-wrap"><table class="tb">
-      <thead><tr><th>Competitor</th><th>Product</th><th>Type</th><th>Channel</th><th class="n">List</th><th class="n">Promo</th><th>Message</th></tr></thead>
-      <tbody>${rows.map(r => `<tr>
-        <td><b>${esc(r.competitor)}</b></td>
-        <td>${esc(r.product)}</td>
-        <td>${esc(r.productType)}</td>
-        <td>${esc(r.channel)}</td>
-        <td class="n">${r.listPrice ? (r.currency==='USD'?'$':'S$')+esc(r.listPrice) : '—'}</td>
-        <td class="n">${r.promoPrice ? (r.currency==='USD'?'$':'S$')+esc(r.promoPrice) : '—'}</td>
-        <td>${esc(r.keyMessage)}</td>
-      </tr>`).join('')}</tbody>
-    </table></div>`;
+  renderCompPulse();
+
+  const takeaways = el('compTakeaways');
+  if(takeaways){
+    takeaways.innerHTML = `<div class="bp-tactics">${competitorTakeaways().map(t => `
+      <div class="bp-t"><b>${esc(t.competitor)} · ${esc(t.channel)}</b><p>${esc(t.action)}</p></div>`).join('')}</div>`;
   }
 
   const personas = el('bpPersonas');
@@ -360,19 +523,24 @@ function renderBrandPulse(){
   const audit = el('bpAudit');
   if(audit){
     S.siteAudit = Object.assign({}, SITE_AUDIT_TEMPLATE, S.siteAudit || {});
+    const sig = channelSignal();
     const row = (k, label) => {
       const r = S.siteAudit[k] || { score:3, issue:'', recommendation:'' };
+      const s = sig[k];
       return `<tr>
         <td><b>${label}</b></td>
         <td class="n"><input class="audit-in n" type="number" min="1" max="5" data-audit="${k}|score" value="${esc(r.score)}"></td>
         <td><input class="audit-in" data-audit="${k}|issue" value="${esc(r.issue||'')}" placeholder="Top blocker"></td>
         <td><input class="audit-in" data-audit="${k}|recommendation" value="${esc(r.recommendation||'')}" placeholder="Action to improve"></td>
+        <td style="font-size:12px;color:var(--mute)">${esc(s.shareTxt)}<br>${esc(s.gpmTxt)}</td>
       </tr>`;
     };
     audit.innerHTML = `<div class="tb-wrap"><table class="tb" id="auditTable">
-      <thead><tr><th>Channel</th><th class="n">Health (1-5)</th><th>Issue</th><th>Recommendation</th></tr></thead>
+      <thead><tr><th>Channel</th><th class="n">Health (1-5)</th><th>Issue</th><th>Recommendation</th><th>Margin / GPM signal</th></tr></thead>
       <tbody>${row('shopee','Shopee')}${row('tiktok','TikTok Shop')}${row('shopify','Shopify')}</tbody>
-    </table></div>`;
+    </table></div>
+    ${isAdmin() ? `<p class="p-note split-note">Blended SKU margin across the price book: <b>${blendedSkuMargin()}%</b> —
+      the profitability backdrop behind every channel's numbers above. Admin only — cost is never shown to the team.</p>` : ''}`;
     qsa('[data-audit]').forEach(i => i.addEventListener('change', () => {
       const [k,f] = i.dataset.audit.split('|');
       S.siteAudit[k] = S.siteAudit[k] || {};
@@ -385,13 +553,164 @@ function renderBrandPulse(){
   const tactics = el('bpTactics');
   if(tactics){
     const a = S.siteAudit || SITE_AUDIT_TEMPLATE;
+    const sig = channelSignal();
     const ideas = [];
-    if((a.shopee?.score||0) <= 3) ideas.push('Shopee: strengthen review acquisition and bundle-led landing pages before raising paid spend.');
-    if((a.tiktok?.score||0) <= 3) ideas.push('TikTok Shop: run creator demo hooks and live-only time-boxed offers with strict floor checks.');
+    const urgent = (k) => (a[k]?.score||0) <= 3 && (sig[k].gpm > 0 ? sig[k].gpm < 200 : sig[k].share !== null && sig[k].share > 0.2);
+    if((a.shopee?.score||0) <= 3) ideas.push(`Shopee: strengthen review acquisition and bundle-led landing pages before raising paid spend.${urgent('shopee')?' Urgent — it is already drawing meaningful budget or creator GPM here is weak.':''}`);
+    if((a.tiktok?.score||0) <= 3) ideas.push(`TikTok Shop: run creator demo hooks and live-only time-boxed offers with strict floor checks.${urgent('tiktok')?' Urgent — it is already drawing meaningful budget or creator GPM here is weak.':''}`);
     if((a.shopify?.score||0) <= 3) ideas.push('Shopify: improve science page clarity and lifecycle retention flows before premium upsell pushes.');
     if(!ideas.length) ideas.push('All core channels healthy. Focus on persona-specific creative testing and ROAS scaling cadence.');
     tactics.innerHTML = `<div class="bp-tactics">${ideas.map(t => `<div class="bp-t"><b>Action</b><p>${esc(t)}</p></div>`).join('')}</div>`;
   }
+}
+
+/* Competitor research — pricing, listing and content strategy for the
+   6 closest competitors. Sole owner of S.compIntel; KOL hub links here
+   rather than duplicating this panel. */
+function renderCompPulse(){
+  const box = el('bpWatch'); if(!box) return;
+  const compRows = (S.compIntel && S.compIntel.length) ? S.compIntel : COMPETITOR_INTEL;
+  const priceTag = (row, key) => {
+    const v = row[key]; if(!v) return '—';
+    return (row.currency === 'USD' ? '$' : 'S$') + v;
+  };
+  const rows = compRows.map(r => `
+      <tr>
+        <td><b>${esc(r.competitor)}</b><span class="sub">${esc(r.product)}</span></td>
+        <td>${esc(r.productType)}</td>
+        <td>${esc(r.channel)}</td>
+        <td class="n">${priceTag(r, 'listPrice')}</td>
+        <td class="n">${priceTag(r, 'promoPrice')}</td>
+        <td>${esc(r.keyMessage)}</td>
+        <td><a class="src-ln" href="${esc(r.source)}" target="_blank" rel="noopener">Source</a></td>
+      </tr>`).join('');
+
+  box.innerHTML = `
+    <div class="intel-head">
+      <span>Observed ${esc((compRows[0]||{}).observedAt || '')} · refresh weekly before decisions</span>
+      <button class="btn-line sm" id="expCompCsv">Download tracker CSV</button>
+      <button class="btn-line sm" id="impCompCsv">Upload CSV</button>
+      <button class="btn-line sm" id="pasteCompCsv">Paste CSV</button>
+      <input type="file" id="impCompFile" accept=".csv,text/csv" hidden>
+    </div>
+    <div class="tb-wrap"><table class="tb" id="compTable">
+      <thead><tr><th>Competitor</th><th>Product type</th><th>Channel</th><th class="n">List</th><th class="n">Promo</th><th>Key message</th><th>Link</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+
+    <div class="msg-stack">
+      ${DNUVO_MESSAGE_STACK.map(m => `<div class="ms-card"><span>${esc(m.lane)}</span><b>${esc(m.text)}</b></div>`).join('')}
+    </div>
+
+    <div class="gap-note">
+      <b>Market gap focus:</b> most competitors lean on generic hydration language. d.nuvo should lead with delivery depth,
+      mechanism education, and claim-safe proof architecture in creator briefs.
+    </div>`;
+
+  const dlBtn = el('expCompCsv');
+  if(dlBtn) dlBtn.addEventListener('click', () => {
+    if(typeof toCSV !== 'function' || typeof dl !== 'function'){
+      toast('Export is not available right now');
+      return;
+    }
+    const csvRows = [
+      ['competitor','product','product_type','channel','currency','list_price','promo_price','observed_at','key_message','source'],
+      ...compRows.map(r => [r.competitor,r.product,r.productType,r.channel,r.currency,r.listPrice,r.promoPrice,r.observedAt,r.keyMessage,r.source])
+    ];
+    dl('dnuvo-competitor-tracker-' + stamp() + '.csv', toCSV(csvRows), 'text/csv;charset=utf-8');
+    toast('Competitor tracker downloaded');
+  });
+
+  const applyImportedRows = rowsIn => {
+    const normalized = rowsIn.filter(r => r.competitor && r.product).map(r => ({
+      competitor: r.competitor,
+      product: r.product,
+      productType: r.product_type || r.producttype || r.category || 'Ceramide / barrier',
+      channel: r.platform_channel || r.channel || 'Marketplace',
+      currency: (r.currency || 'SGD').toUpperCase(),
+      listPrice: r.list_price || r.listprice || '',
+      promoPrice: r.promo_price || r.promoprice || '',
+      observedAt: r.week_start || r.observed_at || new Date().toISOString().slice(0,10),
+      keyMessage: [r.key_message_1, r.key_message_2, r.key_message].filter(Boolean).join(' | '),
+      source: r.source_url || r.source || ''
+    }));
+    if(!normalized.length){
+      toast('No valid competitor rows found');
+      return;
+    }
+    S.compIntel = normalized;
+    save();
+    renderCompPulse();
+    toast('Competitor CSV imported');
+  };
+
+  const handleCsvText = text => {
+    const rowsIn = parseCsvObjects(text);
+    applyImportedRows(rowsIn);
+  };
+
+  el('impCompCsv').addEventListener('click', () => el('impCompFile').click());
+  el('impCompFile').addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    if(!f) return;
+    const reader = new FileReader();
+    reader.onload = () => handleCsvText(String(reader.result || ''));
+    reader.readAsText(f);
+    e.target.value = '';
+  });
+
+  el('pasteCompCsv').addEventListener('click', () => {
+    modal('Paste competitor CSV', `
+      <div class="mf"><label>CSV content</label>
+        <textarea id="compCsvText" rows="12" placeholder="Paste CSV from weekly-competitor-tracker.csv"></textarea>
+        <p class="fh">Keep header row. At minimum include competitor and product columns.</p>
+      </div>`,
+      [['Cancel','x'],['Import','ok']], a => {
+        if(a !== 'ok') return true;
+        handleCsvText(el('compCsvText').value || '');
+        return true;
+      });
+  });
+}
+
+function parseCsvObjects(text){
+  const lines = splitCsvLines(text || '');
+  if(lines.length < 2) return [];
+  const headers = lines[0].map(h => normalizeCsvKey(h));
+  return lines.slice(1).filter(r => r.some(v => String(v).trim())).map(cols => {
+    const o = {};
+    headers.forEach((h, i) => { o[h] = (cols[i] == null ? '' : String(cols[i]).trim()); });
+    return o;
+  });
+}
+
+function normalizeCsvKey(key){
+  return String(key || '').trim().toLowerCase().replace(/\s+/g, '_');
+}
+
+function splitCsvLines(text){
+  const out = [];
+  let row = [];
+  let cell = '';
+  let q = false;
+  for(let i=0;i<text.length;i++){
+    const ch = text[i];
+    const nx = text[i+1];
+    if(ch === '"'){
+      if(q && nx === '"'){ cell += '"'; i++; }
+      else q = !q;
+      continue;
+    }
+    if(ch === ',' && !q){ row.push(cell); cell=''; continue; }
+    if((ch === '\n' || ch === '\r') && !q){
+      if(ch === '\r' && nx === '\n') i++;
+      row.push(cell); out.push(row); row=[]; cell='';
+      continue;
+    }
+    cell += ch;
+  }
+  if(cell.length || row.length){ row.push(cell); out.push(row); }
+  return out;
 }
 
 function renderAiStrategy(){
@@ -414,27 +733,84 @@ function renderAiStrategy(){
     }));
   }
 
+  const gOpen = GATES.filter(g => (S.gates[g.id]||0) >= g.target).length;
+
   const rec = el('aiRecommendations');
   if(rec){
     const rows = [];
-    const gOpen = GATES.filter(g => (S.gates[g.id]||0) >= g.target).length;
-    rows.push(gOpen < 2
-      ? 'Prioritize trust-building modules (KOL + review capture) before scaling paid media.'
-      : 'Scale paid media in line with gate progression and proven channel ROAS.');
-    rows.push('Keep promotions within floor-safe limits and use bundle mechanics over deep sticker-price cuts.');
-    rows.push('Use buyer persona fit panel to decide which creative hook to test next month.');
-    rec.innerHTML = `<div class="ai-rec">${rows.map(r=>`<div class="ai-r"><b>Recommendation</b><p>${esc(r)}</p></div>`).join('')}</div>`;
+
+    // Next gate to close — the first metric still below target, in priority order.
+    const nextGate = GATES.find(g => !((S.gates[g.id]||0) >= g.target));
+    if(nextGate){
+      const v = S.gates[nextGate.id] || 0;
+      rows.push({ h:`Close the ${nextGate.label} gate`,
+        p:`Currently ${v} against a target of ${nextGate.target} (${nextGate.unit}). ${nextGate.why} Clearing it unlocks ${nextGate.unlocks}.` });
+    } else {
+      rows.push({ h:'All gates cleared', p:'Every launch gate is at or above target. Focus shifts to scaling proven channels within floor-safe promotion limits.' });
+    }
+
+    // KOL pipeline health — creators stuck before negotiation vs. those converted.
+    const kols = S.kols || [];
+    const early = kols.filter(k => k.stage === 'sourced' || k.stage === 'contacted').length;
+    const converted = kols.filter(k => ['approved','scheduled','live','done'].includes(k.stage)).length;
+    if(early > 0 && converted === 0){
+      rows.push({ h:'Move creators past outreach', p:`${early} creator${early===1?'':'s'} sitting at sourced or contacted with none approved yet. Outreach without conversion does not move the reviews gate — prioritize replying and negotiating terms this week.` });
+    } else if(converted > 0 && early > converted * 2){
+      rows.push({ h:'Outreach is outpacing conversion', p:`${early} creators are still pre-negotiation against ${converted} approved or further along. Narrow sourcing and spend more time closing the ones already in conversation.` });
+    }
+
+    // Weakest brand-audit channel (see Brand pulse site audit).
+    const audit = S.siteAudit || SITE_AUDIT_TEMPLATE;
+    const weakest = Object.entries(audit).sort((a,b) => (a[1].score||0)-(b[1].score||0))[0];
+    if(weakest && (weakest[1].score||0) <= 3){
+      const chName = { shopee:'Shopee', tiktok:'TikTok Shop', shopify:'Shopify' }[weakest[0]] || weakest[0];
+      rows.push({ h:`${chName} needs attention before scaling`,
+        p: weakest[1].issue ? `Flagged issue: ${weakest[1].issue}. Fix this before adding paid spend there.` : `Health score is ${weakest[1].score}/5 — the lowest of the three channels. Review it before adding paid spend there.` });
+    }
+
+    // Plan pacing against the unit goal.
+    const B = computeBudget();
+    const totalPlanUnits = B.reduce((a,b)=>a+b.units,0);
+    const goal = S.settings.goalUnits;
+    if(goal && totalPlanUnits < goal * 0.9){
+      rows.push({ h:'Plan is under the unit goal', p:`The six-month plan totals ${totalPlanUnits.toLocaleString()} units against a goal of ${goal.toLocaleString()}. Raise monthly targets or add a channel before the gap compounds.` });
+    }
+
+    rows.push({ h:'Persona fit for creative', p:'Use the buyer persona fit panel in Brand pulse to decide which creative hook to test next month.' });
+
+    rec.innerHTML = `<div class="ai-rec">${rows.map(r=>`<div class="ai-r"><b>${esc(r.h)}</b><p>${esc(r.p)}</p></div>`).join('')}</div>`;
   }
 
   const tbl = el('orchestratorTable');
   if(tbl){
-    tbl.innerHTML = `<thead><tr><th>Month</th><th>Strategy focus</th><th>Media</th><th>KOL</th><th>Retail / events</th></tr></thead><tbody>` +
+    const focusFor = i => {
+      if(gOpen >= GATES.length) return 'All gates clear — scale with disciplined promotions';
+      if(i < 2) return 'Build trust and reviews';
+      if(i < 4) return gOpen >= 2 ? 'Activate proven channels' : 'Hold paid activation until gates catch up';
+      return gOpen >= 4 ? 'Scale with disciplined promotions' : 'Scale cautiously — some gates still open';
+    };
+    const promoFor = m => {
+      const entry = Object.entries(S.settings.promoPeriods||{}).find(([k,cfg]) => cfg.active && cfg.month === m.k);
+      if(!entry) return '—';
+      const p = PROMO_PERIODS.find(x => x.k === entry[0]);
+      return p ? p.name : entry[0];
+    };
+    const splitHeadline = i => {
+      const split = recommendSplit(i);
+      const top = Object.entries(split).sort((a,b)=>b[1]-a[1])[0];
+      if(!top || !top[1]) return '—';
+      const name = CHAN_META[top[0]] ? CHAN_META[top[0]].name : top[0];
+      return `${name} ${Math.round(top[1]*100)}%`;
+    };
+    tbl.innerHTML = `<thead><tr><th>Month</th><th>Strategy focus</th><th>Media</th><th>KOL</th><th>Retail / events</th><th>Promo period</th><th>Suggested split</th></tr></thead><tbody>` +
       MONTHS.map((m,i) => `<tr>
         <td><b>${esc(m.label)}</b></td>
-        <td>${i<2?'Build trust and reviews':i<4?'Activate proven channels':'Scale with disciplined promotions'}</td>
+        <td>${esc(focusFor(i))}</td>
         <td>${esc(m.media)}</td>
         <td>${esc(m.kolWork)}</td>
         <td>${esc(m.events)}</td>
+        <td>${esc(promoFor(m))}</td>
+        <td>${esc(splitHeadline(i))}</td>
       </tr>`).join('') + `</tbody>`;
   }
 }
@@ -591,6 +967,7 @@ function renderMedia(){
       el('allocMonth').value = String(idx);
       save();
       renderAlloc();
+      renderSplitSuggestion();
     }));
   }
 
@@ -638,9 +1015,11 @@ function renderMedia(){
       save();
       qsa('[data-mf]').forEach(x => x.classList.toggle('on', +x.dataset.mf === S.mediaFocus));
       renderAlloc();
+      renderSplitSuggestion();
     });
   }
   renderAlloc();
+  renderSplitSuggestion();
 
   el('chanBriefs').innerHTML = CHAN_BRIEFS.map((c,i) =>
     `<div class="cb ${i===0?'open':''}"><div class="cb-h">
@@ -649,6 +1028,37 @@ function renderMedia(){
       <span class="cb-x">+</span></div>
       <div class="cb-b"><dl>${c.rows.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div></div>`).join('');
   qsa('.cb-h').forEach(h => h.addEventListener('click', () => h.parentElement.classList.toggle('open')));
+}
+
+function renderSplitSuggestion(){
+  const box = el('splitSuggestion'); if(!box) return;
+  const i = Number.isInteger(S.mediaFocus) ? S.mediaFocus : 0;
+  const meta = MONTHS[i];
+  const current = (S.splitOverrides && S.splitOverrides[meta.k]) || meta.split;
+  const suggested = recommendSplit(i);
+  const chK = Object.keys(CHAN_META);
+  const changed = chK.some(k => Math.abs((suggested[k]||0) - (current[k]||0)) > 0.001);
+
+  box.innerHTML = `<div class="split-panel">
+    <div class="tb-wrap"><table class="tb">
+      <thead><tr><th>Channel</th><th class="n">Current</th><th class="n">Suggested</th></tr></thead>
+      <tbody>${chK.map(k => `<tr><td>${esc(CHAN_META[k].name)}</td>
+        <td class="n">${Math.round((current[k]||0)*100)}%</td>
+        <td class="n">${changed ? `<b class="sug-up">${Math.round((suggested[k]||0)*100)}%</b>` : Math.round((suggested[k]||0)*100)+'%'}</td></tr>`).join('')}</tbody>
+    </table></div>
+    <p class="split-note">${changed
+      ? `Marketplace promo period active in ${esc(meta.k)} — shifted share from Google/Meta toward Shopee/TikTok.`
+      : `No marketplace promo period tagged for ${esc(meta.k)} — suggestion matches the authored plan.`}</p>
+    ${isAdmin() ? `<button class="btn-line sm" id="applySplitBtn" ${changed?'':'disabled'}>Apply to this month</button>` : ''}
+  </div>`;
+
+  const applyBtn = el('applySplitBtn');
+  if(applyBtn) applyBtn.addEventListener('click', () => {
+    S.splitOverrides = S.splitOverrides || {};
+    S.splitOverrides[meta.k] = suggested;
+    save(); renderAll();
+    toast('Applied — ' + meta.k + ' now uses the suggested split');
+  });
 }
 
 function renderAlloc(){
@@ -727,7 +1137,201 @@ el('copyPrompt').addEventListener('click', () => {
     .then(()=>toast('Prompt copied — paste it into the tool'))
     .catch(()=>toast('Select the text and copy manually'));
 });
+
+/* ═══════════ CONTENT MODULE ═══════════
+   USP vs competitor gap read, and a copy-paste prompt builder for
+   a locked brand-ambassador persona. No API keys live in this static
+   site, so this only ever produces text for the user to paste
+   themselves into Higgsfield/MaxFusion/Gemini/etc.               */
+function contentGaps(){
+  const compRows = (S.compIntel && S.compIntel.length) ? S.compIntel : COMPETITOR_INTEL;
+  const allMsg = compRows.map(r => (r.keyMessage||'').toLowerCase()).join(' | ');
+  const coverageTest = {
+    Emotional:     /hydrat|glow|soft|calm/,
+    Educational:   /technolog|mechanism|clinical|science|ingredient/,
+    Credibility:   /proven|clinical|dermatolog|study|patent/,
+    Differentiation:/patent|delivery|absorption|formula/
+  };
+  return DNUVO_MESSAGE_STACK.map(m => {
+    const test = coverageTest[m.lane];
+    const covered = test ? test.test(allMsg) : false;
+    return { lane:m.lane, text:m.text, covered,
+      opportunity: covered
+        ? `Competitors already lean on similar ${m.lane.toLowerCase()} language — differentiate with specificity, not repetition.`
+        : `Competitors are not leaning on ${m.lane.toLowerCase()} messaging — an open lane for d.nuvo to own.` };
+  });
+}
+
+function pickGapFor(persona){
+  const gaps = contentGaps();
+  return gaps.find(g => persona.contentFocus.includes(g.lane) && !g.covered)
+    || gaps.find(g => persona.contentFocus.includes(g.lane))
+    || gaps[0];
+}
+
+function buildContentPrompt(personaId, formatKey){
+  const persona = BRAND_PERSONAS.find(p => p.id === personaId) || BRAND_PERSONAS[0];
+  const format = CONTENT_FORMATS.find(f => f.k === formatKey) || CONTENT_FORMATS[0];
+  const matched = pickGapFor(persona);
+  const palette = persona.palette.map(c => `${c.name} (${c.hex})`).join(', ');
+
+  return `PERSONA — lock this across every generation so the character stays consistent. This is a real, pre-defined brand ambassador, not a generic model:
+Name: ${persona.name} — "${persona.archetype}"
+Age / hometown: ${persona.age}, ${persona.hometown}
+Background: ${persona.discipline}
+Look: ${persona.look}
+Aesthetic: ${persona.aesthetic}
+Color palette for this character's scenes: ${palette}
+Backstory (for authenticity in dialogue/captions, not to state outright): ${persona.backstory}
+Skin condition — keep this real and visible, never airbrushed to perfection: ${persona.skinCondition}
+Tone of voice: ${persona.tone}
+Native platforms: ${persona.platforms}
+Recurring hashtags: ${persona.hashtags.join(' ')}
+Signature line: "${persona.tagline}"
+
+CONTENT BRIEF
+Format: ${format.name}
+E-E-A-T pillar this piece serves: ${persona.eeatPillar}
+Message lane: ${matched.lane} — "${matched.text}"
+Opportunity: ${matched.opportunity}
+
+GENERATION STEPS — paste into Higgsfield, MaxFusion, Gemini, or your image/video tool of choice:
+1. Establish ${persona.name}'s look exactly as described above — same face, styling, palette and setting every time so she is recognizable across posts.
+2. Set the scene for a ${format.name.toLowerCase()}, in an environment true to her real life (per her background above), consistent with d.nuvo's masstige positioning.
+3. Show her real skin condition honestly — this is what makes her credible, not something to smooth away.
+4. Have ${persona.name} deliver the message lane in her own voice — ${persona.tone.toLowerCase()}
+5. Overlay or voice the core line: "${matched.text}", closing on her signature line if the format allows.
+6. End on a clear, single call to action appropriate to the format (swipe, watch to the end, or shop link).
+
+RULES
+- Do not invent clinical claims or numbers beyond what is in the approved messaging stack.
+- Keep ${persona.name}'s appearance, skin condition, tone and backstory identical across every prompt run — she is a recurring character, not a new face each time.
+- If the tool cannot follow the persona description precisely, note the deviation rather than accepting a different-looking result silently.`;
+}
+
+function renderContentModule(){
+  const cards = el('personaCards');
+  if(cards){
+    cards.innerHTML = `<div class="pf-grid">${BRAND_PERSONAS.map(p => `
+      <div class="pf-card">
+        <div class="pf-h"><b>${esc(p.name)}</b><span class="pill p-v">${esc(p.archetype)}</span></div>
+        <div class="pf-meta">${esc(p.age)} · ${esc(p.hometown)} · ${esc(p.discipline)}</div>
+        <p><b>Look:</b> ${esc(p.look)}</p>
+        <p><b>Skin condition:</b> ${esc(p.skinCondition)}</p>
+        <p><b>Tone:</b> ${esc(p.tone)}</p>
+        <p><b>Platforms:</b> ${esc(p.platforms)}</p>
+        <p><b>E-E-A-T:</b> ${esc(p.eeatPillar)} — "${esc(p.tagline)}"</p>
+        <p class="sub">${p.hashtags.map(h=>esc(h)).join(' ')}</p>
+      </div>`).join('')}</div>`;
+  }
+
+  const gapsBox = el('contentGaps');
+  if(gapsBox){
+    gapsBox.innerHTML = `<div class="bp-tactics">${contentGaps().map(g => `
+      <div class="bp-t"><b>${esc(g.lane)}</b><p>"${esc(g.text)}" — ${esc(g.opportunity)}</p></div>`).join('')}</div>`;
+  }
+
+  const personaSel = el('cpPersona');
+  if(personaSel && !personaSel.options.length){
+    personaSel.innerHTML = BRAND_PERSONAS.map(p => `<option value="${p.id}">${esc(p.name)} — ${esc(p.archetype)}</option>`).join('');
+  }
+  const formatSel = el('cpFormat');
+  if(formatSel && !formatSel.options.length){
+    formatSel.innerHTML = CONTENT_FORMATS.map(f => `<option value="${f.k}">${esc(f.name)}</option>`).join('');
+  }
+}
+
+const buildContentPromptBtn = el('buildContentPromptBtn');
+if(buildContentPromptBtn) buildContentPromptBtn.addEventListener('click', () => {
+  const txt = buildContentPrompt(el('cpPersona').value, el('cpFormat').value);
+  el('contentPromptText').textContent = txt;
+  el('contentPromptOut').hidden = false;
+  el('contentPromptOut').scrollIntoView({behavior:'smooth', block:'nearest'});
+});
+const copyContentPromptBtn = el('copyContentPrompt');
+if(copyContentPromptBtn) copyContentPromptBtn.addEventListener('click', () => {
+  navigator.clipboard.writeText(el('contentPromptText').textContent)
+    .then(()=>toast('Prompt copied — paste it into your tool'))
+    .catch(()=>toast('Select the text and copy manually'));
+});
+
+/* Outbound-only tool links — no API keys ever touch this static site.
+   Copies the current prompt, then opens the tool so the user pastes it
+   themselves. If a tool's URL hasn't been set yet, ask once and save it. */
+function openAiTool(key, label, promptText){
+  navigator.clipboard.writeText(promptText).catch(()=>{});
+  S.settings.aiToolLinks = S.settings.aiToolLinks || {};
+  const known = S.settings.aiToolLinks[key];
+  if(known){
+    window.open(known, '_blank', 'noopener');
+    toast('Prompt copied — paste it into ' + label);
+    return;
+  }
+  modal(`${label} URL`, `<div class="mf"><label>${esc(label)} web address</label>
+    <input id="aiToolUrl" placeholder="https://…">
+    <p class="fh">Saved once so the button opens it directly next time.</p></div>`,
+    [['Cancel','x'],['Save and open','ok']], a => {
+      if(a !== 'ok') return true;
+      const u = (el('aiToolUrl').value || '').trim();
+      if(!u) return false;
+      S.settings.aiToolLinks[key] = u;
+      save();
+      window.open(u, '_blank', 'noopener');
+      toast('Prompt copied — paste it into ' + label);
+      return true;
+    });
+}
+[['openHiggsfield','higgsfield','Higgsfield'],['openMaxfusion','maxfusion','MaxFusion'],['openGemini','gemini','Gemini']]
+  .forEach(([id,key,label]) => {
+    const b = el(id);
+    if(b) b.addEventListener('click', () => openAiTool(key, label, el('contentPromptText').textContent));
+  });
+
+/* Batch weekly prompt set — round-robins personas × formats so a week's
+   worth of content spans multiple personas and E-E-A-T pillars rather
+   than repeating one. Still text-only output. */
+function buildWeeklyPromptSet(count){
+  const n = Math.max(2, Math.min(15, count|0 || 6));
+  const out = [];
+  for(let i=0; i<n; i++){
+    const persona = BRAND_PERSONAS[i % BRAND_PERSONAS.length];
+    const format = CONTENT_FORMATS[i % CONTENT_FORMATS.length];
+    out.push({ persona, format, prompt: buildContentPrompt(persona.id, format.k) });
+  }
+  return out;
+}
+
+const buildWeekSetBtn = el('buildWeekSetBtn');
+if(buildWeekSetBtn) buildWeekSetBtn.addEventListener('click', () => {
+  const count = num(el('cpWeekCount').value) || 6;
+  const set = buildWeeklyPromptSet(count);
+  const box = el('weekPromptSet');
+  box.innerHTML = `<div class="ai-tool-row" style="border:none;padding:11px 0">
+      <button class="btn-line sm" id="copyWeekSet">Copy all</button>
+      <button class="btn-line sm" id="downloadWeekSet">Download as text file</button>
+    </div>` +
+    set.map((s,i) => `<div class="week-prompt">
+      <div class="wp-h"><b>${i+1}. ${esc(s.persona.name)} — ${esc(s.format.name)}</b><span class="pill p-n">${esc(s.persona.eeatPillar)}</span></div>
+      <pre>${esc(s.prompt)}</pre>
+    </div>`).join('');
+  box.dataset.setText = set.map((s,i) => `#${i+1} — ${s.persona.name} — ${s.format.name}\n\n${s.prompt}`).join('\n\n' + '─'.repeat(40) + '\n\n');
+  const cp = el('copyWeekSet');
+  if(cp) cp.addEventListener('click', () => {
+    navigator.clipboard.writeText(box.dataset.setText || '')
+      .then(()=>toast('Whole set copied'))
+      .catch(()=>toast('Select the text and copy manually'));
+  });
+  const dl2 = el('downloadWeekSet');
+  if(dl2) dl2.addEventListener('click', () => {
+    if(typeof dl !== 'function'){ toast('Download is not available right now'); return; }
+    dl('dnuvo-content-week-' + (typeof stamp === 'function' ? stamp() : Date.now()) + '.txt', box.dataset.setText || '', 'text/plain;charset=utf-8');
+  });
+  box.scrollIntoView({behavior:'smooth', block:'nearest'});
+});
+
 el('addKol').addEventListener('click', () => kolForm(-1));
+const goContentBtn = el('goContentModule');
+if(goContentBtn) goContentBtn.addEventListener('click', () => go('content'));
 el('apifyBtn').addEventListener('click', () => {
   modal('Paste scrape result', `<div class="mf"><label>Profile JSON</label>
     <textarea id="apJson" rows="9" placeholder='{"handle":"@example","followers":12400,...}'></textarea>
@@ -845,6 +1449,23 @@ function renderEvents(){
 
 function renderCalendar(){
   const B = computeBudget();
+
+  const pc = el('promoCalendar');
+  if(pc){
+    const active = PROMO_PERIODS
+      .map(p => ({ p, cfg: (S.settings.promoPeriods||{})[p.k] }))
+      .filter(x => x.cfg && x.cfg.active);
+    pc.innerHTML = active.length
+      ? `<div class="tb-wrap"><table class="tb">
+          <thead><tr><th>Period</th><th>Month</th><th>Mechanic</th></tr></thead>
+          <tbody>${active.map(({p,cfg}) => {
+            const m = MONTHS.find(x=>x.k===cfg.month);
+            return `<tr><td><b>${esc(p.name)}</b></td><td>${esc(cfg.month)}${m?' · '+esc(m.label):''}</td><td>${esc(p.mechanicNote)}</td></tr>`;
+          }).join('')}</tbody>
+        </table></div>`
+      : `<p class="empty">No promo periods marked active yet — set them in Campaign setup, at the top of the Strategy view.</p>`;
+  }
+
   el('calTable').innerHTML = `<thead><tr><th>Month</th><th>Media</th><th>Creators</th>
       <th>Activity</th><th>Promotion</th><th class="n">Units</th><th class="n">Budget</th></tr></thead><tbody>` +
     MONTHS.map((m,i) => `<tr><td><b>${esc(m.label)}</b></td><td>${esc(m.media)}</td>
@@ -1041,7 +1662,7 @@ el('restoreFile').addEventListener('change', e => {
 /* ═══════════ BOOT ═══════════ */
 function renderAll(){
   renderRail(); renderOverview(); renderStrategy(); renderPricing();
-  renderBrandPulse(); renderMedia(); renderEvents(); renderCalendar(); renderApprovals(); renderReport(); renderAiStrategy();
+  renderBrandPulse(); renderMedia(); renderContentModule(); renderEvents(); renderCalendar(); renderApprovals(); renderReport(); renderAiStrategy();
   applyModuleVisibility();
   if(typeof renderProposals === 'function') renderProposals();
   // tables are rebuilt on each render, so re-attach sorting and download menus

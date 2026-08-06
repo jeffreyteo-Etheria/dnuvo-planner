@@ -73,6 +73,7 @@
 
       <div class="nav-group">Execute</div>
       <button class="nav-i"      data-view="kol"      data-acl="all">KOL hub</button>
+      <button class="nav-i"      data-view="content"  data-acl="all">Content</button>
       <button class="nav-i"      data-view="events"   data-acl="all">Events</button>
       <button class="nav-i"      data-view="calendar" data-acl="all">Calendar</button>
 
@@ -157,6 +158,11 @@
 
     <!-- ═══════ STRATEGY ═══════ -->
     <section class="view" data-view="strategy">
+      <div class="panel adm-only">
+        <div class="p-h"><h3>Campaign setup</h3><span class="p-note lock">Admin sets these — every other module reads from here</span></div>
+        <div id="campaignSetup"></div>
+      </div>
+
       <div class="panel">
         <div class="p-h"><h3>Positioning</h3><span class="p-note">masstige — clinical authority, not mass discount</span></div>
         <div class="pos">
@@ -193,8 +199,13 @@
       </div>
 
       <div class="panel">
-        <div class="p-h"><h3>Competitor watchlist and intelligence</h3><span class="p-note">track 6 closest competitors by product type</span></div>
+        <div class="p-h"><h3>Competitor watchlist and intelligence</h3><span class="p-note">6 closest competitors — pricing, listing and content strategy from their own social and store presence</span></div>
         <div id="bpWatch"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Competitor takeaways</h3><span class="p-note">what each competitor's pattern means for this month's plan</span></div>
+        <div id="compTakeaways"></div>
       </div>
 
       <div class="panel">
@@ -280,6 +291,14 @@
 
       <div class="panel">
         <div class="p-h">
+          <h3>Suggested channel split</h3>
+          <span class="p-note">for the month selected above — reacts to promo periods tagged in Campaign setup</span>
+        </div>
+        <div id="splitSuggestion"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h">
           <h3>Allocation by product</h3>
           <span class="p-note">every dollar named to a SKU or bundle</span>
         </div>
@@ -301,104 +320,187 @@
     <!-- ═══════ KOL HUB ═══════ -->
     <section class="view" data-view="kol">
 
+      <div class="kstage-tabs" id="kolStageTabs"></div>
+
+      <!-- ── CREATORS: source, verify, select ── -->
+      <div class="kstage" data-stage="creators">
+
+        <div class="panel">
+          <div class="p-h"><h3>Roster</h3><span class="p-note">two types, judged on different things</span>
+            <div class="kol-head-acts">
+              <button class="btn-line sm" id="kolTpl">Template CSV</button>
+              <button class="btn-line sm" id="kolImport">Import CSV</button>
+              <button class="btn-line sm" id="kolAiPick">AI shortlist</button>
+              <button class="btn-solid sm" id="addKol">Add creator</button>
+              <input type="file" id="kolImportFile" accept=".csv,.txt" hidden>
+            </div></div>
+          <div class="ktabs" id="kolTabs"></div>
+          <div class="ktype-note" id="kolTypeNote"></div>
+          <div class="pipe" id="pipeBox"></div>
+        </div>
+
+        <div class="panel">
+          <div class="p-h"><h3>Creators</h3><span class="p-note">click a stage above to filter</span></div>
+          <div class="tb-wrap"><table class="tb" id="kolTable"></table></div>
+          <p class="empty" id="kolEmpty" hidden></p>
+        </div>
+
+        <div class="panel">
+          <div class="p-h"><h3>Selection playbook</h3>
+            <span class="p-note">how a fee is decided</span></div>
+          <div id="playbook"></div>
+        </div>
+
+        <div class="panel">
+          <div class="p-h"><h3>Research a creator</h3>
+            <span class="p-note">verified data only — never estimates</span></div>
+          <div class="research">
+            <div class="res-row">
+              <input id="resHandle" placeholder="@handle" autocomplete="off">
+              <select id="resPlatform">
+                <option value="TikTok">TikTok</option><option value="Instagram">Instagram</option>
+                <option value="YouTube">YouTube</option><option value="Shopee Live">Shopee Live</option>
+                <option value="Xiaohongshu">Xiaohongshu</option>
+              </select>
+              <select id="resTool">
+                <option value="ChatGPT">ChatGPT</option><option value="Copilot">Copilot</option>
+                <option value="Gemini">Gemini</option>
+              </select>
+              <button class="btn-solid" id="genPrompt">Build prompt</button>
+            </div>
+            <div class="prompt-out" id="promptOut" hidden>
+              <div class="po-h"><span>Paste this into <b id="poTool">ChatGPT</b></span>
+                <button class="btn-line sm" id="copyPrompt">Copy</button></div>
+              <pre id="promptText"></pre>
+              <div class="po-warn"><b>Verified data only.</b> If the tool cannot find a figure, leave that
+                field empty — do not accept an estimate, a range presented as fact, or a number the tool
+                cannot attribute. Where nothing is available, check the creator's TikTok Shop or Shopee
+                affiliate storefront directly and record what is publicly shown.</div>
+            </div>
+            <div class="apify">
+              <b>Auto scraping option</b> — paste verified scrape JSON to auto-fill creator fields.
+              <button class="btn-line sm" id="apifyBtn">Paste scrape result</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ── CONTENT: creator-facing coordination ── -->
+      <div class="kstage" data-stage="content">
+
+        <div class="panel">
+          <div class="p-h"><h3>Messages</h3>
+            <span class="p-note">send from your own email or the platform inbox</span></div>
+          <div class="crm">
+            <div class="crm-ctl">
+              <label>Creator <select id="crmKol"></select></label>
+              <label>Stage <select id="crmStage"></select></label>
+              <label>Send via <select id="crmVia"></select></label>
+            </div>
+            <div class="crm-out">
+              <div class="co-h"><span id="crmSubj"></span>
+                <button class="btn-solid sm" id="crmSend">Send</button></div>
+              <textarea id="crmText" rows="12"></textarea>
+            </div>
+            <div class="crm-next" id="crmNext"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="p-h"><h3>Brand creative & persona prompts</h3>
+            <span class="p-note">for ad hooks and briefs, not creator outreach</span></div>
+          <p class="empty">Building d.nuvo-branded image/video prompts (persona, USP vs competitor gaps) now
+            lives in its own module — <button class="btn-line sm" id="goContentModule">Open Content module</button></p>
+        </div>
+
+      </div>
+
+      <!-- ── POST: scheduling and delivery ── -->
+      <div class="kstage" data-stage="post">
+
+        <div class="panel">
+          <div class="p-h"><h3>Schedule</h3>
+            <span class="p-note">deliverables and live sessions</span>
+            <div class="sched-view-toggle">
+              <button class="btn-line sm on" id="schedViewTable">Table</button>
+              <button class="btn-line sm" id="schedViewBoard">Board</button>
+            </div>
+            <button class="btn-line sm" id="schedAllIcs">Download all as calendar</button></div>
+          <div id="kolSched"></div>
+          <div id="kolSchedBoard" hidden></div>
+        </div>
+
+      </div>
+
+      <!-- ── KPI: benchmark vs actual ── -->
+      <div class="kstage" data-stage="kpi">
+
+        <div class="panel">
+          <div class="p-h"><h3>KOL activation plan</h3><span class="p-note">benchmark vs actual across fees, GPM, ROAS, KPI</span></div>
+          <div id="kolActivation"></div>
+        </div>
+
+        <div class="panel">
+          <div class="p-h"><h3>6-month channel long-tail</h3>
+            <span class="p-note">how each platform compounds conversion over time</span></div>
+          <div id="longTailPlan"></div>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- ═══════ CONTENT ═══════ -->
+    <section class="view" data-view="content">
+
       <div class="panel">
-        <div class="p-h"><h3>Roster</h3><span class="p-note">two types, judged on different things</span>
-          <div class="kol-head-acts">
-            <button class="btn-line sm" id="kolTpl">Template CSV</button>
-            <button class="btn-line sm" id="kolImport">Import CSV</button>
-            <button class="btn-line sm" id="kolAiPick">AI shortlist</button>
-            <button class="btn-solid sm" id="addKol">Add creator</button>
-            <input type="file" id="kolImportFile" accept=".csv,.txt" hidden>
-          </div></div>
-        <div class="ktabs" id="kolTabs"></div>
-        <div class="ktype-note" id="kolTypeNote"></div>
-        <div class="pipe" id="pipeBox"></div>
+        <div class="p-h"><h3>Brand persona</h3><span class="p-note">pre-set characters — locked so every generation stays recognizable</span></div>
+        <div id="personaCards"></div>
       </div>
 
       <div class="panel">
-        <div class="p-h"><h3>Creators</h3><span class="p-note">click a stage above to filter</span></div>
-        <div class="tb-wrap"><table class="tb" id="kolTable"></table></div>
-        <p class="empty" id="kolEmpty" hidden></p>
+        <div class="p-h"><h3>USP vs competitor gaps</h3><span class="p-note">where d.nuvo's messaging stack has an open lane</span></div>
+        <div id="contentGaps"></div>
       </div>
 
       <div class="panel">
-        <div class="p-h"><h3>KOL activation plan</h3><span class="p-note">benchmark vs actual across fees, GPM, ROAS, KPI</span></div>
-        <div id="kolActivation"></div>
-      </div>
-
-      <div class="panel">
-        <div class="p-h"><h3>Selection playbook</h3>
-          <span class="p-note">how a fee is decided</span></div>
-        <div id="playbook"></div>
-      </div>
-
-      <div class="panel">
-        <div class="p-h"><h3>Competitor pulse</h3>
-          <span class="p-note">6 closest competitor references for ceramide / barrier products</span></div>
-        <div id="compPulse"></div>
-      </div>
-
-      <div class="panel">
-        <div class="p-h"><h3>6-month channel long-tail</h3>
-          <span class="p-note">how each platform compounds conversion over time</span></div>
-        <div id="longTailPlan"></div>
-      </div>
-
-      <div class="panel">
-        <div class="p-h"><h3>Research a creator</h3>
-          <span class="p-note">verified data only — never estimates</span></div>
+        <div class="p-h"><h3>Prompt builder</h3>
+          <span class="p-note">generate a copy-paste prompt — paste into Higgsfield, MaxFusion, Gemini or your tool of choice</span></div>
         <div class="research">
           <div class="res-row">
-            <input id="resHandle" placeholder="@handle" autocomplete="off">
-            <select id="resPlatform">
-              <option value="TikTok">TikTok</option><option value="Instagram">Instagram</option>
-              <option value="YouTube">YouTube</option><option value="Shopee Live">Shopee Live</option>
-              <option value="Xiaohongshu">Xiaohongshu</option>
-            </select>
-            <select id="resTool">
-              <option value="ChatGPT">ChatGPT</option><option value="Copilot">Copilot</option>
-              <option value="Gemini">Gemini</option>
-            </select>
-            <button class="btn-solid" id="genPrompt">Build prompt</button>
+            <select id="cpPersona"></select>
+            <select id="cpFormat"></select>
+            <button class="btn-solid" id="buildContentPromptBtn">Build prompt</button>
           </div>
-          <div class="prompt-out" id="promptOut" hidden>
-            <div class="po-h"><span>Paste this into <b id="poTool">ChatGPT</b></span>
-              <button class="btn-line sm" id="copyPrompt">Copy</button></div>
-            <pre id="promptText"></pre>
-            <div class="po-warn"><b>Verified data only.</b> If the tool cannot find a figure, leave that
-              field empty — do not accept an estimate, a range presented as fact, or a number the tool
-              cannot attribute. Where nothing is available, check the creator's TikTok Shop or Shopee
-              affiliate storefront directly and record what is publicly shown.</div>
-          </div>
-          <div class="apify">
-            <b>Auto scraping option</b> — paste verified scrape JSON to auto-fill creator fields.
-            <button class="btn-line sm" id="apifyBtn">Paste scrape result</button>
+          <div class="prompt-out" id="contentPromptOut" hidden>
+            <div class="po-h"><span>Paste this into your image/video tool</span>
+              <button class="btn-line sm" id="copyContentPrompt">Copy</button></div>
+            <pre id="contentPromptText"></pre>
+            <div class="po-warn"><b>Persona stays locked.</b> Keep the described character identical across every
+              run so she reads as one recurring ambassador, not a new face each time. Do not let the tool invent
+              clinical claims beyond the approved messaging stack.</div>
+            <div class="ai-tool-row">
+              <span class="p-note">Copies the prompt, then opens the tool in a new tab — no API keys are stored here</span>
+              <button class="btn-line sm" id="openHiggsfield">Open Higgsfield</button>
+              <button class="btn-line sm" id="openMaxfusion">Open MaxFusion</button>
+              <button class="btn-line sm" id="openGemini">Open Gemini</button>
+            </div>
           </div>
         </div>
       </div>
 
       <div class="panel">
-        <div class="p-h"><h3>Schedule</h3>
-          <span class="p-note">deliverables and live sessions</span>
-          <button class="btn-line sm" id="schedAllIcs">Download all as calendar</button></div>
-        <div id="kolSched"></div>
-      </div>
-
-      <div class="panel">
-        <div class="p-h"><h3>Messages</h3>
-          <span class="p-note">send from your own email or the platform inbox</span></div>
-        <div class="crm">
-          <div class="crm-ctl">
-            <label>Creator <select id="crmKol"></select></label>
-            <label>Stage <select id="crmStage"></select></label>
-            <label>Send via <select id="crmVia"></select></label>
+        <div class="p-h"><h3>Batch generate a week's set</h3>
+          <span class="p-note">rotates personas and formats so the week spans multiple E-E-A-T pillars</span></div>
+        <div class="research">
+          <div class="res-row">
+            <label class="week-count-label">How many
+              <input id="cpWeekCount" type="number" min="2" max="15" value="6">
+            </label>
+            <button class="btn-solid" id="buildWeekSetBtn">Generate this week's set</button>
           </div>
-          <div class="crm-out">
-            <div class="co-h"><span id="crmSubj"></span>
-              <button class="btn-solid sm" id="crmSend">Send</button></div>
-            <textarea id="crmText" rows="12"></textarea>
-          </div>
-          <div class="crm-next" id="crmNext"></div>
+          <div id="weekPromptSet"></div>
         </div>
       </div>
 
@@ -424,6 +526,10 @@
 
     <!-- ═══════ CALENDAR ═══════ -->
     <section class="view" data-view="calendar">
+      <div class="panel">
+        <div class="p-h"><h3>Promo periods this campaign</h3><span class="p-note">set in Campaign setup — Strategy view</span></div>
+        <div id="promoCalendar"></div>
+      </div>
       <div class="panel">
         <div class="p-h"><h3>Six-month plan</h3></div>
         <div class="tb-wrap"><table class="tb" id="calTable"></table></div>
