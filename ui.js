@@ -250,7 +250,8 @@ let cmdItems = [], cmdSel = 0;
 function buildCmds(){
   const c = [];
   Object.keys(VIEW_META).forEach(v => {
-    if(v === 'approvals' && !isAdmin()) return;
+    const nav = qs(`.nav-i[data-view="${v}"]`);
+    if(nav && nav.dataset.acl === 'admin' && !isAdmin()) return;
     c.push({ g:'Go to', t:VIEW_META[v][0], s:VIEW_META[v][1], run:()=>go(v) });
   });
   c.push({ g:'Sessions', t:'Save a session', s:'Snapshot the whole plan', run:()=>{ closeCmd(); newSession(); } });

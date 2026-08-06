@@ -67,6 +67,7 @@
       <div class="nav-group">Plan</div>
       <button class="nav-i on"   data-view="overview" data-acl="all">Overview</button>
       <button class="nav-i"      data-view="strategy" data-acl="all">Strategy</button>
+      <button class="nav-i"      data-view="brandpulse" data-acl="all">Brand pulse</button>
       <button class="nav-i"      data-view="pricing"  data-acl="all">Pricing</button>
       <button class="nav-i"      data-view="media"    data-acl="all">Media plan</button>
 
@@ -83,6 +84,7 @@
         Approvals <span class="badge" id="reqBadge" hidden>0</span>
       </button>
       <button class="nav-i"      data-view="report"   data-acl="all">Reporting</button>
+      <button class="nav-i"      data-view="aistrategy" data-acl="admin">AI strategy</button>
     </nav>
 
     <div class="side-foot">
@@ -183,6 +185,34 @@
       </div>
     </section>
 
+    <!-- ═══════ BRAND PULSE ═══════ -->
+    <section class="view" data-view="brandpulse">
+      <div class="panel">
+        <div class="p-h"><h3>Module guide</h3><span class="p-note">non-technical flow from analysis to action</span></div>
+        <div id="bpGuide"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Competitor watchlist and intelligence</h3><span class="p-note">track 6 closest competitors by product type</span></div>
+        <div id="bpWatch"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Buyer personas fit engine</h3><span class="p-note">5 core Singapore and SEA personas with market reach fit</span></div>
+        <div id="bpPersonas"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>d.nuvo site audit</h3><span class="p-note">Shopee, TikTok Shop, Shopify input for strategy alignment</span></div>
+        <div id="bpAudit"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Adaptive playbook tactics</h3><span class="p-note">actions generated from competitor and audit signals</span></div>
+        <div id="bpTactics"></div>
+      </div>
+    </section>
+
     <!-- ═══════ PRICING ═══════ -->
     <section class="view" data-view="pricing">
       <div class="panel">
@@ -235,6 +265,11 @@
     <!-- ═══════ MEDIA ═══════ -->
     <section class="view" data-view="media">
       <div class="panel">
+        <div class="p-h"><h3>Month focus navigator</h3><span class="p-note">simple month-by-month execution guidance</span></div>
+        <div class="month-focus" id="mediaMonthFocus"></div>
+      </div>
+
+      <div class="panel">
         <div class="p-h">
           <h3>Budget engine</h3>
           <span class="p-note">base + reinvested profit</span>
@@ -268,7 +303,13 @@
 
       <div class="panel">
         <div class="p-h"><h3>Roster</h3><span class="p-note">two types, judged on different things</span>
-          <button class="btn-solid sm" id="addKol">Add creator</button></div>
+          <div class="kol-head-acts">
+            <button class="btn-line sm" id="kolTpl">Template CSV</button>
+            <button class="btn-line sm" id="kolImport">Import CSV</button>
+            <button class="btn-line sm" id="kolAiPick">AI shortlist</button>
+            <button class="btn-solid sm" id="addKol">Add creator</button>
+            <input type="file" id="kolImportFile" accept=".csv,.txt" hidden>
+          </div></div>
         <div class="ktabs" id="kolTabs"></div>
         <div class="ktype-note" id="kolTypeNote"></div>
         <div class="pipe" id="pipeBox"></div>
@@ -278,6 +319,11 @@
         <div class="p-h"><h3>Creators</h3><span class="p-note">click a stage above to filter</span></div>
         <div class="tb-wrap"><table class="tb" id="kolTable"></table></div>
         <p class="empty" id="kolEmpty" hidden></p>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>KOL activation plan</h3><span class="p-note">benchmark vs actual across fees, GPM, ROAS, KPI</span></div>
+        <div id="kolActivation"></div>
       </div>
 
       <div class="panel">
@@ -324,8 +370,8 @@
               cannot attribute. Where nothing is available, check the creator's TikTok Shop or Shopee
               affiliate storefront directly and record what is publicly shown.</div>
           </div>
-          <div class="apify adm-only">
-            <b>Apify scraping</b> — admin only. Run a verified profile scrape and paste the JSON to auto-fill.
+          <div class="apify">
+            <b>Auto scraping option</b> — paste verified scrape JSON to auto-fill creator fields.
             <button class="btn-line sm" id="apifyBtn">Paste scrape result</button>
           </div>
         </div>
@@ -360,6 +406,16 @@
 
     <!-- ═══════ EVENTS ═══════ -->
     <section class="view" data-view="events">
+      <div class="panel">
+        <div class="p-h"><h3>Promotions and pricing architecture</h3><span class="p-note">BAU, monthly offers, flash, 9.9, 11.11, 12.12</span></div>
+        <div id="promoArchitecture"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Retail and event windows</h3><span class="p-note">channel mechanics by month</span></div>
+        <div class="tb-wrap"><table class="tb" id="retailWindowTable"></table></div>
+      </div>
+
       <div class="panel">
         <div class="p-h"><h3>Activity calendar</h3><span class="p-note">book 4–6 weeks ahead</span></div>
         <div class="tb-wrap"><table class="tb" id="eventTable"></table></div>
@@ -412,6 +468,24 @@
       <div class="panel">
         <div class="p-h"><h3>Month notes</h3></div>
         <div class="notes" id="notesBox"></div>
+      </div>
+    </section>
+
+    <!-- ═══════ AI STRATEGY ═══════ -->
+    <section class="view" data-view="aistrategy">
+      <div class="panel">
+        <div class="p-h"><h3>Module orchestrator</h3><span class="p-note">select or unselect independent modules by campaign need</span></div>
+        <div id="moduleOrchestrator"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>AI recommendations</h3><span class="p-note">best-practice guidance from current strategy, audit and execution state</span></div>
+        <div id="aiRecommendations"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Connected monthly workflow</h3><span class="p-note">end-to-end actions by month across all active modules</span></div>
+        <div class="tb-wrap"><table class="tb" id="orchestratorTable"></table></div>
       </div>
     </section>
 

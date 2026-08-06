@@ -54,6 +54,7 @@ function renderKol(){
   renderKolTabs();
   renderKolPipe();
   renderKolTable();
+  renderKolActivation();
   renderCompPulse();
   renderLongTailPlan();
   renderCrm();
@@ -728,4 +729,32 @@ function renderLongTailPlan(){
         <td>${esc(p.m56)}</td>
       </tr>`).join('')}</tbody>
     </table></div>`;
+}
+
+function renderKolActivation(){
+  const box = el('kolActivation'); if(!box) return;
+  const list = (S.kols || []).filter(k => k.stage === 'approved' || k.stage === 'running' || k.stage === 'done');
+  if(!list.length){
+    box.innerHTML = `<p class="empty">No approved or running creators yet. Move shortlisted creators forward in the pipeline to populate activation benchmarking.</p>`;
+    return;
+  }
+
+  const rows = list.map(k => {
+    const gpm = computeGpm(k);
+    const roasBenchmark = k.type === 'live' ? '2.5x+' : '1.8x+';
+    const kpi = k.type === 'live' ? 'GMV and conversion rate' : 'Review volume and CAC';
+    return `<tr>
+      <td><b>${esc(k.handle || '')}</b><span class="sub">${esc(k.type || 'ugc')} · ${esc(k.platform || '')}</span></td>
+      <td class="n">${k.fee ? esc(S.settings.cur + k.fee) : '—'}</td>
+      <td class="n">${gpm ? ('$' + Math.round(gpm).toLocaleString()) : '—'}</td>
+      <td class="n">${esc(roasBenchmark)}</td>
+      <td>${esc(kpi)}</td>
+      <td>${esc((KOL_PIPE.find(x => x.k === k.stage) || {}).name || k.stage || '')}</td>
+    </tr>`;
+  }).join('');
+
+  box.innerHTML = `<div class="tb-wrap"><table class="tb">
+    <thead><tr><th>Creator</th><th class="n">Fee</th><th class="n">GPM</th><th class="n">ROAS benchmark</th><th>KPI</th><th>Status</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
 }

@@ -409,6 +409,106 @@ const LONG_TAIL_PLAN = [
   }
 ];
 
+/* ── Buyer personas for Singapore and SEA markets ── */
+const BUYER_PERSONAS = [
+  {
+    id:'sensitive-pro',
+    name:'Sensitive Skin Young Professional',
+    age:'24-34',
+    market:'Singapore + Tier 1 SEA cities',
+    pain:'Recurring redness, irritation, and fear of trying active ingredients.',
+    emotional:'Needs safety and visible calming without trial-and-error stress.',
+    psychology:'Buys when dermatologist-style proof and real-skin reviews reduce risk.',
+    entry:'Water Cream 80ml + Sun Serum SPF50+',
+    sequence:'Education short video -> ingredient explainer -> first-order welcome offer -> 14-day check-in content -> bundle upsell',
+    channels:['TikTok Shop','Shopee','Shopify']
+  },
+  {
+    id:'acne-recovery',
+    name:'Post-Acne Recovery Seeker',
+    age:'20-30',
+    market:'Singapore, Malaysia, Thailand, Philippines',
+    pain:'Persistent marks, sensitivity after acne routines, barrier instability.',
+    emotional:'Wants confidence return and fewer flare-up cycles.',
+    psychology:'Responds to before/after proof and concern-specific routines over beauty claims.',
+    entry:'Trouble Calming Ampoule + Water Cream',
+    sequence:'Concern hook -> creator testimonial -> recovery protocol bundle -> review capture -> repeat regimen reminder',
+    channels:['TikTok Shop','Shopee']
+  },
+  {
+    id:'busy-mom',
+    name:'Busy Family Caregiver',
+    age:'30-45',
+    market:'Singapore + urban SEA households',
+    pain:'Time-poor routine, multiple skin needs in one household.',
+    emotional:'Needs dependable products that simplify daily care.',
+    psychology:'Prefers value bundles, clear usage steps, and low-risk first purchase.',
+    entry:'Essential Toner + Sun Serum starter bundle',
+    sequence:'Family-safe claim -> practical routine card -> bundle offer -> follow-up reorder prompt -> larger household pack',
+    channels:['Shopee','Lazada','Retail']
+  },
+  {
+    id:'trend-creator-fan',
+    name:'Trend-Led Social Shopper',
+    age:'18-28',
+    market:'SEA social commerce audiences',
+    pain:'Skincare trend fatigue and difficulty separating hype from real efficacy.',
+    emotional:'Wants to feel early, informed, and socially validated.',
+    psychology:'Converts through creator-led demos, live drops, and scarcity windows.',
+    entry:'Vitamin C Ampoule hero SKU',
+    sequence:'Creator demo -> live flash slot -> code-driven checkout -> UGC repost loop -> spark ad retargeting',
+    channels:['TikTok Shop','Instagram Reels']
+  },
+  {
+    id:'premium-routine',
+    name:'Premium Routine Builder',
+    age:'28-42',
+    market:'Singapore + mature SEA beauty segments',
+    pain:'Inconsistent results from fragmented products.',
+    emotional:'Wants a complete routine with clinical authority and visible payoff.',
+    psychology:'Buys complete systems when value and efficacy ladder are clearly framed.',
+    entry:'Hero Repair Duo then Full Ritual Set',
+    sequence:'Science-led landing page -> diagnostic quiz -> duo conversion -> proof email flow -> premium set upsell',
+    channels:['Shopify','Shopee','Retail/Events']
+  }
+];
+
+/* ── Independent module catalog (orchestrated from AI Strategy) ── */
+const MODULE_CATALOG = [
+  { id:'strategy',   name:'Strategy',          view:'strategy',   role:'All roles', defaultOn:true },
+  { id:'brandpulse', name:'Brand pulse',       view:'brandpulse', role:'All roles', defaultOn:true },
+  { id:'pricing',    name:'SKU pricing',       view:'pricing',    role:'Admin + planning', defaultOn:true },
+  { id:'media',      name:'Media plan',        view:'media',      role:'Media planner', defaultOn:true },
+  { id:'kol',        name:'KOL hub',           view:'kol',        role:'Social / KOL manager', defaultOn:true },
+  { id:'events',     name:'Retail and events', view:'events',     role:'Event and retail lead', defaultOn:true },
+  { id:'calendar',   name:'Calendar',          view:'calendar',   role:'All roles', defaultOn:true },
+  { id:'report',     name:'Reporting',         view:'report',     role:'All roles', defaultOn:true },
+  { id:'aistrategy', name:'AI strategy engine',view:'aistrategy', role:'Admin', defaultOn:true, adminOnly:true }
+];
+
+/* ── Site audit and strategy alignment defaults ── */
+const SITE_AUDIT_TEMPLATE = {
+  shopee: { score:3, issue:'', recommendation:'' },
+  tiktok: { score:3, issue:'', recommendation:'' },
+  shopify:{ score:3, issue:'', recommendation:'' }
+};
+
+const PROMO_ARCHITECTURE = [
+  { k:'bau',    title:'BAU pricing',      value:'Full price', note:'No discount. Builds perceived value baseline.' },
+  { k:'member', title:'Member welcome',   value:'15% off',    note:'First order only. Track conversion quality.' },
+  { k:'flash',  title:'Flash / live',     value:'20% off',    note:'Limited slots or time windows only.' },
+  { k:'floor',  title:'Never discount below', value:'25% off', note:'Maintains premium positioning and margin safety.' }
+];
+
+const RETAIL_EVENT_WINDOWS = [
+  { month:'M1', phase:'Trust phase', focus:'Review seeding + first promotions', channel:'Shopee + IG', mechanic:'BAU full price + member welcome 15%', goal:'First reviews and store visibility' },
+  { month:'M2', phase:'Proof phase', focus:'Bundle and creator checkpoints', channel:'Shopee + TikTok', mechanic:'Limited flash windows only', goal:'Lift social proof and CTR' },
+  { month:'M3', phase:'Paid activation', focus:'9.9 readiness', channel:'Shopee + TikTok + Google', mechanic:'Event stack with strict floor checks', goal:'Stable ROAS above 1.5x' },
+  { month:'M4', phase:'Scale phase', focus:'Retail and pharmacy support', channel:'Shopee + Retail', mechanic:'Channel-specific bundles', goal:'Retail trial + repeat signals' },
+  { month:'M5', phase:'Peak prep', focus:'11.11 acceleration', channel:'Shopee + TikTok Live', mechanic:'Timed deal blocks', goal:'High-intent conversion' },
+  { month:'M6', phase:'Year-end close', focus:'12.12 and festive sets', channel:'All channels', mechanic:'Seasonal bundles + gift framing', goal:'Stock clearance with margin discipline' }
+];
+
 /* ── KOL pipeline stages ── */
 const KOL_STAGES = [
   { k:'sourced',  name:'Sourced',   desc:'Found and verified. Not yet contacted.' },

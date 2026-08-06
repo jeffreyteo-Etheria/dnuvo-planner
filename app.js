@@ -110,6 +110,7 @@ el('signOut').addEventListener('click', () => location.reload());
 const VIEW_META = {
   overview :['Overview','Where the launch stands today.'],
   strategy :['Strategy','Positioning, phases and the rules that hold them.'],
+  brandpulse:['Brand pulse','Competitor intelligence, personas, and site audit alignment.'],
   pricing  :['Pricing','Tiered architecture across three platforms.'],
   media    :['Media plan','Budget, and every dollar named to a product.'],
   kol      :['KOL hub','Source, verify, brief and manage creators.'],
@@ -117,7 +118,8 @@ const VIEW_META = {
   calendar :['Calendar','Six months, and the first eight weeks in detail.'],
   pending  :['Pending changes','Proposed by the team. Nothing is applied until you decide.'],
   approvals:['Approvals','Change requests waiting on you.'],
-  report   :['Reporting','Actuals against plan.']
+  report   :['Reporting','Actuals against plan.'],
+  aistrategy:['AI strategy','Orchestrate modules and generate connected monthly actions.']
 };
 function go(v){
   view = v;
@@ -266,6 +268,189 @@ function renderStrategy(){
   }
 }
 
+function renderBrandPulse(){
+  const guide = el('bpGuide');
+  if(guide){
+    guide.innerHTML = `<div class="bp-guide">
+      <b>How to use this module (non-technical)</b>
+      <ol>
+        <li>Update competitor watchlist or import CSV in KOL module.</li>
+        <li>Score d.nuvo channels in site audit below (Shopee, TikTok Shop, Shopify).</li>
+        <li>Review buyer persona fit for the current month campaign.</li>
+        <li>Use generated tactics to adjust pricing, media, KOL, and event modules.</li>
+      </ol>
+    </div>`;
+  }
+
+  const watch = el('bpWatch');
+  if(watch){
+    const rows = (S.compIntel && S.compIntel.length) ? S.compIntel : COMPETITOR_INTEL;
+    watch.innerHTML = `<div class="tb-wrap"><table class="tb">
+      <thead><tr><th>Competitor</th><th>Product</th><th>Type</th><th>Channel</th><th class="n">List</th><th class="n">Promo</th><th>Message</th></tr></thead>
+      <tbody>${rows.map(r => `<tr>
+        <td><b>${esc(r.competitor)}</b></td>
+        <td>${esc(r.product)}</td>
+        <td>${esc(r.productType)}</td>
+        <td>${esc(r.channel)}</td>
+        <td class="n">${r.listPrice ? (r.currency==='USD'?'$':'S$')+esc(r.listPrice) : '—'}</td>
+        <td class="n">${r.promoPrice ? (r.currency==='USD'?'$':'S$')+esc(r.promoPrice) : '—'}</td>
+        <td>${esc(r.keyMessage)}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>`;
+  }
+
+  const personas = el('bpPersonas');
+  if(personas){
+    const fit = S.personaFit || (S.personaFit = { awareness:3, conversion:3, retention:3 });
+    const fitScore = p => {
+      const ch = p.channels || [];
+      const channelCoverage = ch.filter(c => /Shopee|TikTok|Shopify|Lazada|Retail|Instagram/i.test(c)).length;
+      const score = Math.round((fit.awareness + fit.conversion + fit.retention + channelCoverage) / 4);
+      return Math.max(1, Math.min(5, score));
+    };
+
+    personas.innerHTML = `
+      <div class="pf-ctl">
+        <label>Brand awareness strength
+          <input type="range" id="pfAw" min="1" max="5" value="${fit.awareness}">
+          <span id="pfAwV">${fit.awareness}/5</span>
+        </label>
+        <label>Conversion readiness
+          <input type="range" id="pfCv" min="1" max="5" value="${fit.conversion}">
+          <span id="pfCvV">${fit.conversion}/5</span>
+        </label>
+        <label>Retention strength
+          <input type="range" id="pfRt" min="1" max="5" value="${fit.retention}">
+          <span id="pfRtV">${fit.retention}/5</span>
+        </label>
+      </div>
+      <div class="pf-grid">
+        ${BUYER_PERSONAS.map(p => {
+          const s = fitScore(p);
+          const tone = s >= 4 ? 'p-g' : s >= 3 ? 'p-a' : 'p-r';
+          return `<div class="pf-card">
+            <div class="pf-h"><b>${esc(p.name)}</b><span class="pill ${tone}">Fit ${s}/5</span></div>
+            <div class="pf-meta">${esc(p.age)} · ${esc(p.market)}</div>
+            <p><b>Pain:</b> ${esc(p.pain)}</p>
+            <p><b>Trigger:</b> ${esc(p.emotional)}</p>
+            <p><b>Psychology:</b> ${esc(p.psychology)}</p>
+            <p><b>Entry:</b> ${esc(p.entry)}</p>
+            <p><b>Sequence:</b> ${esc(p.sequence)}</p>
+            <p><b>Channels:</b> ${esc((p.channels||[]).join(', '))}</p>
+          </div>`;
+        }).join('')}
+      </div>`;
+
+    const upd = () => {
+      fit.awareness = +el('pfAw').value;
+      fit.conversion = +el('pfCv').value;
+      fit.retention = +el('pfRt').value;
+      el('pfAwV').textContent = `${fit.awareness}/5`;
+      el('pfCvV').textContent = `${fit.conversion}/5`;
+      el('pfRtV').textContent = `${fit.retention}/5`;
+      save();
+      renderBrandPulse();
+    };
+    ['pfAw','pfCv','pfRt'].forEach(id => {
+      const x = el(id);
+      if(x) x.addEventListener('input', upd);
+    });
+  }
+
+  const audit = el('bpAudit');
+  if(audit){
+    S.siteAudit = Object.assign({}, SITE_AUDIT_TEMPLATE, S.siteAudit || {});
+    const row = (k, label) => {
+      const r = S.siteAudit[k] || { score:3, issue:'', recommendation:'' };
+      return `<tr>
+        <td><b>${label}</b></td>
+        <td class="n"><input class="audit-in n" type="number" min="1" max="5" data-audit="${k}|score" value="${esc(r.score)}"></td>
+        <td><input class="audit-in" data-audit="${k}|issue" value="${esc(r.issue||'')}" placeholder="Top blocker"></td>
+        <td><input class="audit-in" data-audit="${k}|recommendation" value="${esc(r.recommendation||'')}" placeholder="Action to improve"></td>
+      </tr>`;
+    };
+    audit.innerHTML = `<div class="tb-wrap"><table class="tb" id="auditTable">
+      <thead><tr><th>Channel</th><th class="n">Health (1-5)</th><th>Issue</th><th>Recommendation</th></tr></thead>
+      <tbody>${row('shopee','Shopee')}${row('tiktok','TikTok Shop')}${row('shopify','Shopify')}</tbody>
+    </table></div>`;
+    qsa('[data-audit]').forEach(i => i.addEventListener('change', () => {
+      const [k,f] = i.dataset.audit.split('|');
+      S.siteAudit[k] = S.siteAudit[k] || {};
+      S.siteAudit[k][f] = (f === 'score') ? num(i.value) : i.value.trim();
+      save();
+      renderBrandPulse();
+    }));
+  }
+
+  const tactics = el('bpTactics');
+  if(tactics){
+    const a = S.siteAudit || SITE_AUDIT_TEMPLATE;
+    const ideas = [];
+    if((a.shopee?.score||0) <= 3) ideas.push('Shopee: strengthen review acquisition and bundle-led landing pages before raising paid spend.');
+    if((a.tiktok?.score||0) <= 3) ideas.push('TikTok Shop: run creator demo hooks and live-only time-boxed offers with strict floor checks.');
+    if((a.shopify?.score||0) <= 3) ideas.push('Shopify: improve science page clarity and lifecycle retention flows before premium upsell pushes.');
+    if(!ideas.length) ideas.push('All core channels healthy. Focus on persona-specific creative testing and ROAS scaling cadence.');
+    tactics.innerHTML = `<div class="bp-tactics">${ideas.map(t => `<div class="bp-t"><b>Action</b><p>${esc(t)}</p></div>`).join('')}</div>`;
+  }
+}
+
+function renderAiStrategy(){
+  const mod = el('moduleOrchestrator');
+  if(mod){
+    S.moduleState = S.moduleState || {};
+    mod.innerHTML = `<div class="mod-grid">${MODULE_CATALOG.map(m => {
+      const on = (S.moduleState[m.id] == null) ? m.defaultOn : !!S.moduleState[m.id];
+      const dis = (m.adminOnly && !isAdmin()) ? ' disabled' : '';
+      return `<label class="mod-card">
+        <input type="checkbox" data-mod="${m.id}"${on?' checked':''}${dis}>
+        <b>${esc(m.name)}</b><span>${esc(m.role)}</span>
+      </label>`;
+    }).join('')}</div>`;
+    qsa('[data-mod]', mod).forEach(c => c.addEventListener('change', () => {
+      S.moduleState[c.dataset.mod] = c.checked;
+      save();
+      applyModuleVisibility();
+      renderAiStrategy();
+    }));
+  }
+
+  const rec = el('aiRecommendations');
+  if(rec){
+    const rows = [];
+    const gOpen = GATES.filter(g => (S.gates[g.id]||0) >= g.target).length;
+    rows.push(gOpen < 2
+      ? 'Prioritize trust-building modules (KOL + review capture) before scaling paid media.'
+      : 'Scale paid media in line with gate progression and proven channel ROAS.');
+    rows.push('Keep promotions within floor-safe limits and use bundle mechanics over deep sticker-price cuts.');
+    rows.push('Use buyer persona fit panel to decide which creative hook to test next month.');
+    rec.innerHTML = `<div class="ai-rec">${rows.map(r=>`<div class="ai-r"><b>Recommendation</b><p>${esc(r)}</p></div>`).join('')}</div>`;
+  }
+
+  const tbl = el('orchestratorTable');
+  if(tbl){
+    tbl.innerHTML = `<thead><tr><th>Month</th><th>Strategy focus</th><th>Media</th><th>KOL</th><th>Retail / events</th></tr></thead><tbody>` +
+      MONTHS.map((m,i) => `<tr>
+        <td><b>${esc(m.label)}</b></td>
+        <td>${i<2?'Build trust and reviews':i<4?'Activate proven channels':'Scale with disciplined promotions'}</td>
+        <td>${esc(m.media)}</td>
+        <td>${esc(m.kolWork)}</td>
+        <td>${esc(m.events)}</td>
+      </tr>`).join('') + `</tbody>`;
+  }
+}
+
+function applyModuleVisibility(){
+  const state = S.moduleState || {};
+  MODULE_CATALOG.forEach(m => {
+    const on = (state[m.id] == null) ? m.defaultOn : !!state[m.id];
+    const nav = qs(`.nav-i[data-view="${m.view}"]`);
+    const sec = qs(`.view[data-view="${m.view}"]`);
+    if(nav) nav.style.display = on ? '' : 'none';
+    if(sec) sec.style.display = on ? '' : 'none';
+    if(sec && !on && view === m.view) go('overview');
+  });
+}
+
 /* ═══════════ PRICING ═══════════ */
 function renderPricing(){
   el('tierBox').innerHTML = TIERS.map(t =>
@@ -391,6 +576,23 @@ function renderMedia(){
   const B = computeBudget();
   const canEdit = isAdmin();
   const chK = Object.keys(CHAN_META);
+  const activeMonth = Number.isInteger(S.mediaFocus) ? S.mediaFocus : 0;
+
+  const mf = el('mediaMonthFocus');
+  if(mf){
+    mf.innerHTML = MONTHS.map((m,i) =>
+      `<button class="mf-btn ${i===activeMonth?'on':''}" data-mf="${i}">${esc(m.k)}<span>${esc(m.label)}</span></button>`
+    ).join('');
+    qsa('[data-mf]').forEach(b => b.addEventListener('click', () => {
+      qsa('[data-mf]').forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      const idx = +b.dataset.mf;
+      S.mediaFocus = idx;
+      el('allocMonth').value = String(idx);
+      save();
+      renderAlloc();
+    }));
+  }
 
   el('budgetTable').innerHTML = `<thead><tr><th>Month</th><th class="n">Units</th><th class="n">Avg price</th>
       <th class="n">Revenue</th>${canEdit?'<th class="n">Profit</th>':''}<th class="n">Budget</th>
@@ -430,8 +632,13 @@ function renderMedia(){
   const sel = el('allocMonth');
   if(!sel.options.length){
     sel.innerHTML = B.map((b,i)=>`<option value="${i}">${b.label}</option>`).join('');
-    sel.value = 1;
-    sel.addEventListener('change', renderAlloc);
+    sel.value = String(activeMonth);
+    sel.addEventListener('change', () => {
+      S.mediaFocus = +sel.value;
+      save();
+      qsa('[data-mf]').forEach(x => x.classList.toggle('on', +x.dataset.mf === S.mediaFocus));
+      renderAlloc();
+    });
   }
   renderAlloc();
 
@@ -522,7 +729,6 @@ el('copyPrompt').addEventListener('click', () => {
 });
 el('addKol').addEventListener('click', () => kolForm(-1));
 el('apifyBtn').addEventListener('click', () => {
-  if(!isAdmin()){ toast('Scraping is available to administrators only'); return; }
   modal('Paste scrape result', `<div class="mf"><label>Profile JSON</label>
     <textarea id="apJson" rows="9" placeholder='{"handle":"@example","followers":12400,...}'></textarea>
     <p class="fh">Paste the JSON returned by the scraper. Fields that are absent stay empty — nothing is inferred.</p></div>`,
@@ -546,9 +752,90 @@ el('apifyBtn').addEventListener('click', () => {
     });
 });
 
+const kolTplBtn = el('kolTpl');
+if(kolTplBtn) kolTplBtn.addEventListener('click', () => {
+  const rows = [
+    ['type','handle','platform','name','tier','followers','audience','contact','source','er','posts','rate','avgViews','avgGmv','gpm','retention','fee','notes'],
+    ['ugc','@creator_handle','TikTok','Creator Name','Nano','','','','','','','','','','','','',''],
+    ['live','@live_handle','TikTok','Live Seller','Micro','','','','','','','','12000','6000','','6m 20s','200','']
+  ];
+  if(typeof toCSV === 'function' && typeof dl === 'function'){
+    dl('dnuvo-kol-import-template-' + stamp() + '.csv', toCSV(rows), 'text/csv;charset=utf-8');
+    toast('KOL template downloaded');
+  }
+});
+
+const kolImportBtn = el('kolImport');
+const kolImportFile = el('kolImportFile');
+if(kolImportBtn && kolImportFile){
+  kolImportBtn.addEventListener('click', () => kolImportFile.click());
+  kolImportFile.addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    if(!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      if(typeof parseCsvObjects !== 'function'){ toast('CSV parser not available'); return; }
+      const rowsIn = parseCsvObjects(String(r.result || ''));
+      let added = 0;
+      rowsIn.forEach(x => {
+        if(!x.handle) return;
+        S.kols.push({
+          type: (x.type === 'live' ? 'live' : 'ugc'),
+          handle: x.handle.startsWith('@') ? x.handle : ('@' + x.handle),
+          platform: x.platform || 'TikTok',
+          name: x.name || '', tier: x.tier || 'Nano',
+          followers: x.followers || '', audience: x.audience || '', contact: x.contact || '', source: x.source || '',
+          er: x.er || '', posts: x.posts || '', rate: x.rate || '',
+          avgViews: x.avgviews || '', avgGmv: x.avggmv || '', gpm: x.gpm || '', retention: x.retention || '', fee: x.fee || '',
+          notes: x.notes || '', stage: 'sourced'
+        });
+        added++;
+      });
+      if(added){ save(); if(typeof renderKol === 'function') renderKol(); renderOverview(); toast(added + ' creators imported'); }
+      else toast('No valid creator rows found');
+    };
+    r.readAsText(f);
+    e.target.value = '';
+  });
+}
+
+const kolAiPickBtn = el('kolAiPick');
+if(kolAiPickBtn) kolAiPickBtn.addEventListener('click', () => {
+  const list = (S.kols || []).map(k => {
+    const gpm = (typeof computeGpm === 'function') ? computeGpm(k) : 0;
+    const score = (typeof fitScore === 'function') ? fitScore(k) : 0;
+    const rank = Math.round(gpm / 100) + score;
+    return { rank, gpm, score, k };
+  }).sort((a,b) => b.rank - a.rank).slice(0, 8);
+  modal('AI shortlist (best fit first)', `<div class="tb-wrap"><table class="tb">
+    <thead><tr><th>Creator</th><th>Type</th><th class="n">GPM</th><th class="n">Fit</th><th class="n">Rank</th></tr></thead>
+    <tbody>${list.map(x => `<tr><td><b>${esc(x.k.handle || '')}</b></td><td>${esc(x.k.type || 'ugc')}</td><td class="n">${x.gpm ? ('$' + Math.round(x.gpm)) : '—'}</td><td class="n">${x.score}/10</td><td class="n">${x.rank}</td></tr>`).join('')}</tbody>
+  </table></div><p class="fh">Use as recommendation only. Keep verified-data standards before activation.</p>`, [['Close','x']], () => true);
+});
+
 
 /* ═══════════ EVENTS / CALENDAR ═══════════ */
 function renderEvents(){
+  const pa = el('promoArchitecture');
+  if(pa){
+    pa.innerHTML = `<div class="promo-grid">${PROMO_ARCHITECTURE.map(p =>
+      `<div class="promo-card"><span>${esc(p.title)}</span><b>${esc(p.value)}</b><p>${esc(p.note)}</p></div>`
+    ).join('')}</div>`;
+  }
+
+  const rw = el('retailWindowTable');
+  if(rw){
+    rw.innerHTML = `<thead><tr><th>Month</th><th>Phase</th><th>Focus</th><th>Channel</th><th>Mechanic</th><th>Goal</th></tr></thead><tbody>` +
+      RETAIL_EVENT_WINDOWS.map(r => `<tr>
+        <td><b>${esc(r.month)}</b></td>
+        <td>${esc(r.phase)}</td>
+        <td>${esc(r.focus)}</td>
+        <td>${esc(r.channel)}</td>
+        <td>${esc(r.mechanic)}</td>
+        <td>${esc(r.goal)}</td>
+      </tr>`).join('') + `</tbody>`;
+  }
+
   el('eventTable').innerHTML = `<thead><tr><th>Activity</th><th>When</th><th class="n">Budget</th>
       <th>Purpose</th><th>How it runs</th><th>Owner</th></tr></thead><tbody>` +
     EVENTS.map(e => `<tr><td><b>${esc(e.name)}</b></td><td class="n">${esc(e.when)}</td>
@@ -754,7 +1041,8 @@ el('restoreFile').addEventListener('change', e => {
 /* ═══════════ BOOT ═══════════ */
 function renderAll(){
   renderRail(); renderOverview(); renderStrategy(); renderPricing();
-  renderMedia(); renderEvents(); renderCalendar(); renderApprovals(); renderReport();
+  renderBrandPulse(); renderMedia(); renderEvents(); renderCalendar(); renderApprovals(); renderReport(); renderAiStrategy();
+  applyModuleVisibility();
   if(typeof renderProposals === 'function') renderProposals();
   // tables are rebuilt on each render, so re-attach sorting and download menus
   if(typeof refreshSortable === 'function'){ refreshSortable(); injectPanelExports(); }
