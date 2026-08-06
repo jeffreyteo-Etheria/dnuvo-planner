@@ -1,7 +1,9 @@
 # d.nuvo — Launch Console
 
 A role-gated strategy and execution dashboard for a six-month product launch.
-Static site. No build step, no server, no dependencies.
+Static site, no build step. By default there is no server and no dependencies —
+the optional **Live sync** feature (see below) is the one exception, and it is
+off until you turn it on.
 
 ## Deploy
 
@@ -17,6 +19,11 @@ Static site. No build step, no server, no dependencies.
 4. Name it `NETLIFY_BUILD_HOOK` and paste the URL.
 
 This repo includes `.github/workflows/netlify-deploy-hook.yml`, which triggers that hook on every push to `main`.
+
+**Note on `package.json`:** it exists only so Netlify can bundle the optional Live sync function
+(`@netlify/blobs`) — the site itself is still served as plain static files, `publish = "."`,
+no build command. If you don't set `WORKSPACE_KEY` (see Live sync below), the rest of the app
+works exactly as before and that function simply never gets used.
 
 ## Access
 
@@ -175,6 +182,27 @@ machine. Tick *push automatically* to sync whenever a session is saved.
 
 The token is held in that browser and transmitted only to github.com. A gist is readable by
 anyone you share its URL with, including cost figures — keep it private.
+
+## Live sync
+
+Optional, and the one part of this app that involves a server: a small Netlify Function
+(`netlify/functions/sync.mjs`) backed by Netlify Blobs, so the whole team can read and write
+the same live plan instead of each person's browser holding its own separate copy. This is what
+makes the team → admin proposal/approval workflow actually reach another person, rather than
+staying stuck in the browser that made the change.
+
+**Setup (once, by whoever deploys this):**
+
+1. In Netlify: Site settings → Environment variables → add `WORKSPACE_KEY` with a passphrase of
+   your choosing. This key is never committed to the repo.
+2. Share that passphrase with the team out of band (Slack, 1Password, whatever you'd use for
+   any shared credential).
+3. In the app: Sessions → Live sync → paste the key → **Push** or **Pull**.
+
+There is no per-user login and no merge logic — it's one shared workspace protected by one
+shared key, and the last push wins if two people push around the same time. That's a deliberate,
+minimal trade-off for a small internal team, not a general multi-user editing system. The key
+is held in your browser and sent only to this site's own sync function.
 
 ## Downloading
 

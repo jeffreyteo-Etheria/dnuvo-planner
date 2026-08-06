@@ -32,6 +32,17 @@ const SCHED_BOARD = [
   { k:'done',      name:'Done' }
 ];
 
+/* ── Best-practice posting windows per platform — a starting point to
+   verify against the creator's own audience-activity data, not a
+   guarantee. Times are local to the audience's own timezone.       ── */
+const POSTING_TIMES = {
+  'TikTok':          ['7–9pm', '12–1pm lunch scroll'],
+  'Instagram':       ['12–1pm', '7–9pm'],
+  'YouTube':         ['2–4pm weekdays', '9–11am weekends'],
+  'Shopee Live':     ['8–10pm (peak live-shopping window)'],
+  'Xiaohongshu':     ['8–10pm', '12–1pm']
+};
+
 /* ── Structured promo-period catalog. Campaign setup marks which of
    these apply and to which month; media plan and calendar both read
    from that single source instead of separate free-text fields.  ── */

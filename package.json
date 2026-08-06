@@ -1,0 +1,8 @@
+{
+  "name": "dnuvo-planner",
+  "private": true,
+  "description": "Static launch console. This file exists only so Netlify can bundle the optional Live sync function — the site itself still has no build step.",
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}

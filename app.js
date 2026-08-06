@@ -968,6 +968,7 @@ function renderMedia(){
       save();
       renderAlloc();
       renderSplitSuggestion();
+      if(typeof renderKolBudgetDrilldown === 'function') renderKolBudgetDrilldown();
     }));
   }
 
@@ -1016,6 +1017,7 @@ function renderMedia(){
       qsa('[data-mf]').forEach(x => x.classList.toggle('on', +x.dataset.mf === S.mediaFocus));
       renderAlloc();
       renderSplitSuggestion();
+      if(typeof renderKolBudgetDrilldown === 'function') renderKolBudgetDrilldown();
     });
   }
   renderAlloc();

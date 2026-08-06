@@ -57,6 +57,22 @@ function isLocked(k){
 function canDelete(k){
   return isAdmin() || !isLocked(k);
 }
+/* Payment status on a schedule entry — admin edits, team reads only,
+   same split as fee/rate pricing elsewhere in KOL hub. */
+function payCell(e){
+  const status = e.paidStatus || 'unpaid';
+  if(isAdmin()){
+    return `<select class="pay-sel" data-pay="${e.id}">
+      <option value="unpaid"${status==='unpaid'?' selected':''}>Unpaid</option>
+      <option value="deposit"${status==='deposit'?' selected':''}>Deposit paid</option>
+      <option value="paid"${status==='paid'?' selected':''}>Paid</option>
+    </select>`;
+  }
+  const label = status === 'paid' ? 'Paid' : status === 'deposit' ? 'Deposit paid' : 'Unpaid';
+  const tone = status === 'paid' ? 'p-g' : status === 'deposit' ? 'p-a' : 'p-n';
+  return `<span class="pill ${tone}">${label}</span>`;
+}
+
 /* Pending pricing proposal flag — mirrors proposals.js's cell() styling,
    since fee/rate are edited via the creator modal, not an inline cell. */
 function kolPendingBadge(k, field){
@@ -76,6 +92,8 @@ function renderKol(){
   renderKolPipe();
   renderKolTable();
   renderKolActivation();
+  renderKolPayments();
+  renderKolBudgetDrilldown();
   renderLongTailPlan();
   renderCrm();
   renderKolSchedule();
@@ -156,6 +174,7 @@ function renderKolTable(){
       <button class="btn-line sm" data-edit="${i}">${locked && !isAdmin() ? 'View' : 'Edit'}</button>
       ${kolTab==='live'?`<button class="btn-line sm" data-fit="${i}">Fit</button>`:''}
       <button class="btn-line sm" data-sched="${i}">Schedule</button>
+      <button class="btn-line sm" data-brief="${i}">Brief</button>
       ${del?`<button class="btn-line sm danger" data-del="${i}">Delete</button>`
            :`<span class="lock-t" title="Approved and later records cannot be removed by the team">🔒</span>`}
     </div>`;
@@ -201,6 +220,7 @@ function renderKolTable(){
   qsa('[data-edit]').forEach(b => b.addEventListener('click', () => kolForm(+b.dataset.edit)));
   qsa('[data-fit]').forEach(b => b.addEventListener('click', () => fitForm(+b.dataset.fit)));
   qsa('[data-sched]').forEach(b => b.addEventListener('click', () => schedForm(+b.dataset.sched)));
+  qsa('[data-brief]').forEach(b => b.addEventListener('click', () => showCreatorBrief(+b.dataset.brief)));
   qsa('[data-del]').forEach(b => b.addEventListener('click', () => delKol(+b.dataset.del)));
   if(typeof wireCells === 'function') wireCells();
 }
@@ -404,6 +424,62 @@ function fitForm(idx){
   upd();
 }
 
+/* ── creator brief — a real UGC script/edit-brief for a real roster
+   creator, distinct from the Content module's synthetic-persona ad
+   prompts. Same "verified data only, no invented claims" standard
+   applied throughout this app's KOL tooling. ── */
+function buildCreatorBrief(idx){
+  const k = S.kols[idx];
+  const type = k.type || 'ugc';
+  const T = KOL_TYPES[type];
+  const times = POSTING_TIMES[k.platform] || [];
+  const lane = type === 'live'
+    ? (DNUVO_MESSAGE_STACK.find(m => m.lane === 'Credibility') || DNUVO_MESSAGE_STACK[0])
+    : (DNUVO_MESSAGE_STACK.find(m => m.lane === 'Emotional') || DNUVO_MESSAGE_STACK[0]);
+  const deliverable = (DELIVERABLES[type] || [])[0] || 'Content piece';
+  const feeText = type === 'live'
+    ? (k.fee ? S.settings.cur + k.fee : 'terms not yet agreed')
+    : (k.rate ? S.settings.cur + k.rate : 'terms not yet agreed');
+
+  return `CREATOR BRIEF — ${k.handle}
+Platform: ${k.platform || '—'}   Type: ${T ? T.name : type}
+Deliverable: ${deliverable}
+Terms: ${feeText}
+
+MESSAGE TO WORK IN
+"${lane.text}" (${lane.lane} lane)
+
+SCRIPT / SHOT OUTLINE
+1. Hook (first 2 seconds) — product in hand or on skin immediately, no long intro.
+2. Problem — name the real skin frustration this solves (barrier damage, dullness, breakouts — whatever's true for you).
+3. Product moment — apply on camera, describe what it actually feels like. No claim beyond the line above.
+4. Payoff — what changed, in your own words.
+5. CTA — point to the shop link or bio, one clear next step.
+
+BEST TIME TO POST
+${times.length ? times.join(' or ') : 'No guidance on file for this platform — check your own analytics.'}
+(Starting point only — verify against this account's own audience-activity data.)
+
+RULES
+- Do not state a clinical claim or number beyond what's in the approved messaging stack.
+- Keep it in your own voice — this is a brief, not a script to read verbatim.`;
+}
+
+function showCreatorBrief(idx){
+  const k = S.kols[idx];
+  const brief = buildCreatorBrief(idx);
+  modal(`Brief — ${k.handle}`, `<pre class="brief-out">${esc(brief)}</pre>`,
+    [['Close','x'],['Copy','copy']], a => {
+      if(a === 'copy'){
+        navigator.clipboard.writeText(brief)
+          .then(()=>toast('Brief copied'))
+          .catch(()=>toast('Select the text and copy manually'));
+        return false;
+      }
+      return true;
+    });
+}
+
 /* ── scheduling ── */
 function schedForm(idx){
   const k = S.kols[idx];
@@ -427,7 +503,9 @@ function schedForm(idx){
         id:'E'+Date.now().toString(36), kol:k.handle, type,
         what: el('scType').value, date: el('scDate').value, time: el('scTime').value,
         owner: el('scOwner').value.trim(), note: el('scNote').value.trim(),
-        done:false, board:'planned', at:new Date().toISOString()
+        done:false, board:'planned',
+        feeAgreed: num(type === 'live' ? k.fee : k.rate) || 0, paidStatus:'unpaid',
+        at:new Date().toISOString()
       });
       if(k.stage === 'approved') k.stage = 'scheduled';
       save(); renderKol();
@@ -448,7 +526,7 @@ function renderKolSchedule(){
   const today = new Date().toISOString().slice(0,10);
   box.innerHTML = `<div class="tb-wrap"><table class="tb" id="schedTable">
     <thead><tr><th>Date</th><th>Time</th><th>Creator</th><th>Type</th><th>Deliverable</th>
-      <th>Owner</th><th>Notes</th><th>Status</th><th></th></tr></thead><tbody>` +
+      <th>Owner</th><th>Notes</th><th>Status</th><th class="n">Fee</th><th>Payment</th><th></th></tr></thead><tbody>` +
     all.map(e => {
       const past = e.date < today;
       const kol = S.kols.find(x => x.handle === e.kol);
@@ -463,6 +541,8 @@ function renderKolSchedule(){
         <td>${e.done?`<span class="pill p-g">Done</span>`
               :past?`<span class="pill p-r">Overdue</span>`
               :`<span class="pill p-a">Booked</span>`}</td>
+        <td class="n">${e.feeAgreed?esc(S.settings.cur+e.feeAgreed):'—'}</td>
+        <td>${payCell(e)}</td>
         <td><div class="k-acts">
           <button class="btn-line sm" data-scdone="${e.id}">${e.done?'Reopen':'Mark done'}</button>
           <button class="btn-line sm" data-scics="${e.id}">Calendar</button>
@@ -480,6 +560,10 @@ function renderKolSchedule(){
   }));
   qsa('[data-scics]').forEach(b => b.addEventListener('click', () => {
     downloadIcs(S.schedule.find(x=>x.id===b.dataset.scics));
+  }));
+  qsa('[data-pay]').forEach(s => s.addEventListener('change', () => {
+    const e = S.schedule.find(x=>x.id===s.dataset.pay);
+    if(e){ e.paidStatus = s.value; save(); renderKolPayments(); }
   }));
 
   const dl = el('schedAllIcs');
@@ -503,6 +587,8 @@ function renderKolScheduleBoard(){
           <b>${esc(e.kol)}</b>
           <span class="sub">${esc(e.what)}</span>
           <span class="sc-date">${esc(e.date)}${e.time?' · '+esc(e.time):''}</span>
+          ${e.feeAgreed ? `<span class="sc-fee">${esc(S.settings.cur+e.feeAgreed)} · ${
+            (e.paidStatus||'unpaid')==='paid'?'Paid':(e.paidStatus||'unpaid')==='deposit'?'Deposit paid':'Unpaid'}</span>` : ''}
         </div>`).join('') || '<p class="sched-empty">Nothing here</p>'}
       </div>
     </div>`;
@@ -694,6 +780,66 @@ function renderLongTailPlan(){
         <td>${esc(p.m56)}</td>
       </tr>`).join('')}</tbody>
     </table></div>`;
+}
+
+function renderKolPayments(){
+  const box = el('kolPayments'); if(!box) return;
+  const all = S.schedule || [];
+  const totals = { unpaid:0, deposit:0, paid:0 };
+  all.forEach(e => { totals[e.paidStatus||'unpaid'] += (e.feeAgreed||0); });
+  const grand = totals.unpaid + totals.deposit + totals.paid;
+  const c = S.settings.cur;
+  box.innerHTML = `<div class="pay-summary">
+    <div class="pay-tile"><span>Owed (unpaid)</span><b>${esc(c)}${totals.unpaid.toLocaleString()}</b></div>
+    <div class="pay-tile"><span>Deposits paid</span><b>${esc(c)}${totals.deposit.toLocaleString()}</b></div>
+    <div class="pay-tile"><span>Paid in full</span><b>${esc(c)}${totals.paid.toLocaleString()}</b></div>
+    <div class="pay-tile tot"><span>Total committed</span><b>${esc(c)}${grand.toLocaleString()}</b></div>
+  </div>`;
+}
+
+/* Real calendar dates for M1-M6, derived from S.settings.startMonth
+   (previously unused anywhere) — needed to match schedule entries,
+   which carry real dates, against a month index. */
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+function monthDateRange(monthIndex){
+  const parts = (S.settings.startMonth || 'July 2026').split(' ');
+  const mi = MONTH_NAMES.indexOf(parts[0]);
+  const yr = parseInt(parts[1], 10) || new Date().getFullYear();
+  const base = mi >= 0 ? mi : 6;
+  const start = new Date(Date.UTC(yr, base + monthIndex, 1));
+  const end = new Date(Date.UTC(yr, base + monthIndex + 1, 1));
+  return { start: start.toISOString().slice(0,10), end: end.toISOString().slice(0,10) };
+}
+
+/* Connects the flat monthly KOL channel pool (Media plan) to the
+   named creators actually committed against it this month. */
+function kolBudgetDrilldown(monthIndex){
+  const B = computeBudget();
+  const b = B[monthIndex];
+  const pool = (b && b.ch.kol) || 0;
+  const range = monthDateRange(monthIndex);
+  const entries = (S.schedule || []).filter(e => e.date >= range.start && e.date < range.end);
+  const committed = entries.reduce((a,e) => a + (e.feeAgreed||0), 0);
+  return { month: b ? b.label : '—', pool, committed, diff: pool - committed, entries };
+}
+
+function renderKolBudgetDrilldown(){
+  const box = el('kolBudgetDrilldown'); if(!box) return;
+  const i = Number.isInteger(S.mediaFocus) ? S.mediaFocus : 0;
+  const d = kolBudgetDrilldown(i);
+  const c = S.settings.cur;
+  const over = d.diff < 0;
+  box.innerHTML = `<div class="pay-summary">
+      <div class="pay-tile"><span>${esc(d.month)} KOL budget</span><b>${esc(c)}${Math.round(d.pool).toLocaleString()}</b></div>
+      <div class="pay-tile"><span>Committed to named creators</span><b>${esc(c)}${Math.round(d.committed).toLocaleString()}</b></div>
+      <div class="pay-tile ${over?'over':'tot'}"><span>${over?'Over budget':'Headroom'}</span><b>${esc(c)}${Math.round(Math.abs(d.diff)).toLocaleString()}</b></div>
+    </div>
+    ${d.entries.length
+      ? `<div class="tb-wrap"><table class="tb">
+          <thead><tr><th>Creator</th><th>Deliverable</th><th class="n">Fee</th></tr></thead>
+          <tbody>${d.entries.map(e => `<tr><td>${esc(e.kol)}</td><td>${esc(e.what)}</td><td class="n">${esc(c)}${(e.feeAgreed||0).toLocaleString()}</td></tr>`).join('')}</tbody>
+        </table></div>`
+      : `<p class="empty">No deliverables scheduled in ${esc(d.month)} yet.</p>`}`;
 }
 
 function renderKolActivation(){

@@ -7,19 +7,25 @@
 
 const SESS_KEY = 'dnuvo_sessions_v1';
 const SYNC_KEY = 'dnuvo_sync_v1';
+const LIVESYNC_KEY = 'dnuvo_livesync_v1';
 
 let SESSIONS = [];
 let SYNC = { token:'', gistId:'', lastPush:null, lastPull:null, auto:false };
+let LIVESYNC = { key:'', lastPush:null, lastPull:null, auto:false };
 
 function loadSessions(){
   try{ SESSIONS = JSON.parse(localStorage.getItem(SESS_KEY) || '[]'); }catch(e){ SESSIONS = []; }
   try{ SYNC = Object.assign(SYNC, JSON.parse(localStorage.getItem(SYNC_KEY) || '{}')); }catch(e){}
+  try{ LIVESYNC = Object.assign(LIVESYNC, JSON.parse(localStorage.getItem(LIVESYNC_KEY) || '{}')); }catch(e){}
 }
 function saveSessions(){
   try{ localStorage.setItem(SESS_KEY, JSON.stringify(SESSIONS)); }catch(e){}
 }
 function saveSync(){
   try{ localStorage.setItem(SYNC_KEY, JSON.stringify(SYNC)); }catch(e){}
+}
+function saveLiveSync(){
+  try{ localStorage.setItem(LIVESYNC_KEY, JSON.stringify(LIVESYNC)); }catch(e){}
 }
 
 /* ── snapshot helpers ── */
@@ -107,6 +113,41 @@ async function ghPull(){
   if(!parsed.current) throw new Error('That file is not a launch console backup.');
   SYNC.lastPull = new Date().toISOString();
   saveSync();
+  return parsed;
+}
+
+/* ── Live sync ───────────────────────────────────
+   One shared blob on Netlify, protected by a single
+   workspace passphrase (not a per-user account). Push
+   is last-write-wins — there is no merge logic, so two
+   people editing at once means whoever pushes last wins.
+   This is what lets a team member's proposal actually
+   reach the admin's browser without a manual handoff.  */
+const LIVESYNC_URL = '/.netlify/functions/sync';
+
+async function liveSyncPush(){
+  if(!LIVESYNC.key) throw new Error('No workspace key saved.');
+  const r = await fetch(LIVESYNC_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Workspace-Key': LIVESYNC.key },
+    body: JSON.stringify({ savedAt: new Date().toISOString(), current: S, sessions: SESSIONS })
+  });
+  if(r.status === 401) throw new Error('That workspace key was rejected. Check it against what is set in Netlify.');
+  if(r.status === 500) throw new Error('Live sync is not set up on this deploy yet — WORKSPACE_KEY is missing in Netlify site settings.');
+  if(!r.ok) throw new Error('Live sync returned ' + r.status + '. Try again in a moment.');
+  LIVESYNC.lastPush = new Date().toISOString();
+  saveLiveSync();
+  return r.json();
+}
+
+async function liveSyncPull(){
+  if(!LIVESYNC.key) throw new Error('No workspace key saved.');
+  const r = await fetch(LIVESYNC_URL, { headers: { 'X-Workspace-Key': LIVESYNC.key } });
+  if(!r.ok) throw new Error('Live sync returned ' + r.status + '. Try again in a moment.');
+  const parsed = await r.json();
+  if(!parsed.current) throw new Error('Nothing has been pushed to this workspace yet.');
+  LIVESYNC.lastPull = new Date().toISOString();
+  saveLiveSync();
   return parsed;
 }
 

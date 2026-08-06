@@ -18,6 +18,7 @@ function drawerTab(t){
   qsa('.dw-pane').forEach(p => p.classList.toggle('on', p.dataset.pane === t));
   if(t === 'sessions') renderSessions();
   if(t === 'sync')     renderSync();
+  if(t === 'livesync') renderLiveSyncPane();
   if(t === 'export')   renderExport();
 }
 
@@ -213,6 +214,80 @@ function renderSync(){
   });
 }
 
+/* ── LIVE SYNC ──
+   A shared workspace, not a private one — anyone with the workspace
+   key sees and can overwrite the same plan. Push is last-write-wins;
+   there is no merge, unlike GitHub sync's separate-gist-per-owner
+   model. Opt-in only: nothing here runs until a key is entered.   */
+function renderLiveSyncPane(){
+  const connected = !!LIVESYNC.key;
+  el('liveSyncPane').innerHTML = `
+    <div class="sync-state ${connected?'ok':''}">
+      <span class="ss-dot"></span>
+      <div><b>${connected?'Live sync enabled':'Not enabled'}</b>
+        <span>${connected
+          ? 'Shared workspace — everyone with this key sees the same plan'
+          : 'Enter your team’s workspace key to turn this on'}</span></div>
+    </div>
+
+    <div class="mf"><label>Workspace key</label>
+      <input id="lsKey" type="password" value="${esc(LIVESYNC.key)}" placeholder="ask your admin for this">
+      <p class="fh">Set once by whoever configured this deploy (as <b>WORKSPACE_KEY</b> in Netlify's site
+        settings) and shared with the team out of band. It stays in this browser and is sent only to
+        this site's own sync function — never to a third party.</p></div>
+
+    <label class="sync-auto"><input type="checkbox" id="lsAuto"${LIVESYNC.auto?' checked':''}>
+      <span>Push automatically when I save a session</span></label>
+
+    <div class="sync-acts">
+      <button class="btn-solid" id="lsPushBtn">Push to workspace</button>
+      <button class="btn-line" id="lsPullBtn">Pull from workspace</button>
+    </div>
+
+    <div class="sync-log">
+      <div><span>Last push</span><b>${LIVESYNC.lastPush?new Date(LIVESYNC.lastPush).toLocaleString():'never'}</b></div>
+      <div><span>Last pull</span><b>${LIVESYNC.lastPull?new Date(LIVESYNC.lastPull).toLocaleString():'never'}</b></div>
+    </div>
+
+    <div class="sync-note">
+      This is a shared plan, not a personal backup — pushing overwrites whatever the workspace last
+      had, and pulling overwrites what's in this browser. There is no merge: if two people push at
+      once, the later push wins. Good for a small team, not for simultaneous editing.
+    </div>`;
+
+  el('lsKey').addEventListener('input', e => { LIVESYNC.key = e.target.value.trim(); saveLiveSync(); });
+  el('lsAuto').addEventListener('change', e => { LIVESYNC.auto = e.target.checked; saveLiveSync(); });
+
+  el('lsPushBtn').addEventListener('click', async () => {
+    const b = el('lsPushBtn'); b.disabled = true; b.textContent = 'Pushing…';
+    try{
+      await liveSyncPush();
+      toast('Pushed to the shared workspace');
+      renderLiveSyncPane();
+    }catch(e){ toast(e.message); }
+    b.disabled = false; b.textContent = 'Push to workspace';
+  });
+
+  el('lsPullBtn').addEventListener('click', async () => {
+    const b = el('lsPullBtn'); b.disabled = true; b.textContent = 'Pulling…';
+    try{
+      const d = await liveSyncPull();
+      modal('Replace local plan?', `<p style="font-size:13.5px;color:var(--mute);line-height:1.6">
+        The workspace was last saved <b style="color:var(--ink)">${esc(new Date(d.savedAt).toLocaleString())}</b>.</p>
+        <p style="font-size:13px;color:var(--mute);margin-top:10px">
+        Pulling replaces what is in this browser. Save a session first if you have unsaved work.</p>`,
+        [['Cancel','x'],['Pull and replace','ok']], a => {
+          if(a!=='ok') return true;
+          S = d.current; SESSIONS = d.sessions || SESSIONS;
+          save(); saveSessions(); renderAll(); renderKol(); renderLiveSyncPane(); renderSessions();
+          toast('Pulled from the shared workspace');
+          return true;
+        });
+    }catch(e){ toast(e.message); }
+    b.disabled = false; b.textContent = 'Pull from workspace';
+  });
+}
+
 /* ── EXPORT ── */
 function renderExport(){
   el('exportPane').innerHTML = `
@@ -398,5 +473,8 @@ saveSessions = function(){
   _saveSessions();
   if(SYNC.auto && SYNC.token){
     ghPush().then(()=>toast('Pushed to GitHub')).catch(()=>{});
+  }
+  if(LIVESYNC.auto && LIVESYNC.key){
+    liveSyncPush().then(()=>toast('Pushed to the shared workspace')).catch(()=>{});
   }
 };

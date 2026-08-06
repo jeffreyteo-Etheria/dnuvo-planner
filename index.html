@@ -442,6 +442,16 @@
         </div>
 
         <div class="panel">
+          <div class="p-h"><h3>Payments</h3><span class="p-note">what's owed, deposited and paid across every scheduled deliverable</span></div>
+          <div id="kolPayments"></div>
+        </div>
+
+        <div class="panel">
+          <div class="p-h"><h3>KOL budget vs. commitments</h3><span class="p-note">this month's KOL channel budget against named-creator fees</span></div>
+          <div id="kolBudgetDrilldown"></div>
+        </div>
+
+        <div class="panel">
           <div class="p-h"><h3>6-month channel long-tail</h3>
             <span class="p-note">how each platform compounds conversion over time</span></div>
           <div id="longTailPlan"></div>
@@ -621,6 +631,7 @@
     <div class="dw-tabs">
       <button class="dw-tab on" data-tab="sessions">Sessions</button>
       <button class="dw-tab" data-tab="sync">GitHub sync</button>
+      <button class="dw-tab" data-tab="livesync">Live sync</button>
       <button class="dw-tab" data-tab="export">Download</button>
     </div>
 
@@ -634,6 +645,10 @@
 
     <div class="dw-pane" data-pane="sync">
       <div id="syncPane"></div>
+    </div>
+
+    <div class="dw-pane" data-pane="livesync">
+      <div id="liveSyncPane"></div>
     </div>
 
     <div class="dw-pane" data-pane="export">
