@@ -10,6 +10,8 @@
 let kolTab = 'ugc';
 let kolStage = 'creators';
 let schedView = 'table';
+let schedCalMonth = null;
+let schedCalFilters = { kol:'', type:'', status:'' };
 function schedBoardOf(e){ return e.board || (e.done ? 'done' : 'planned'); }
 const KOL_STAGE_TABS = [
   { k:'creators', name:'Creators', desc:'Source, verify, select' },
@@ -98,6 +100,7 @@ function renderKol(){
   renderCrm();
   renderKolSchedule();
   renderKolScheduleBoard();
+  renderKolScheduleCalendar();
   if(typeof refreshSortable === 'function'){ refreshSortable(); injectPanelExports(); }
 }
 
@@ -625,6 +628,134 @@ function renderKolScheduleBoard(){
   });
 }
 
+/* Month calendar view of the same S.schedule — the umbrella surface: what
+   every creator is doing and when, across both UGC and livestream lanes,
+   with overdue entries flagged in place rather than only in a table. */
+function pad2(n){ return String(n).padStart(2,'0'); }
+function ymd(y,m,d){ return `${y}-${pad2(m+1)}-${pad2(d)}`; }
+
+function renderKolScheduleCalendar(){
+  const box = el('kolSchedCal'); if(!box) return;
+  const all = S.schedule || [];
+  if(!all.length){
+    box.innerHTML = `<p class="empty">Nothing scheduled. Use <b>Schedule</b> on a creator to book a
+      deliverable or a live session.</p>`;
+    return;
+  }
+  if(!schedCalMonth){
+    const n = new Date();
+    schedCalMonth = new Date(Date.UTC(n.getFullYear(), n.getMonth(), 1));
+  }
+  const y = schedCalMonth.getUTCFullYear(), m = schedCalMonth.getUTCMonth();
+  const today = new Date().toISOString().slice(0,10);
+
+  const kolOptions = [...new Set(all.map(e => e.kol))].sort();
+  const statusOf = e => e.done ? 'done' : (e.date < today ? 'overdue' : 'booked');
+  const list = all.filter(e =>
+    (!schedCalFilters.kol || e.kol === schedCalFilters.kol) &&
+    (!schedCalFilters.type || e.type === schedCalFilters.type) &&
+    (!schedCalFilters.status || statusOf(e) === schedCalFilters.status));
+
+  const firstWeekday = new Date(Date.UTC(y, m, 1)).getUTCDay();
+  const daysInMonth = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  const cells = [];
+  for(let i = 0; i < firstWeekday; i++) cells.push(null);
+  for(let d = 1; d <= daysInMonth; d++) cells.push(d);
+  while(cells.length % 7) cells.push(null);
+
+  const weekdayHead = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+    .map(w => `<div class="cal-wd">${w}</div>`).join('');
+
+  const dayCells = cells.map(d => {
+    if(!d) return `<div class="cal-cell cal-out"></div>`;
+    const dateStr = ymd(y, m, d);
+    const entries = list.filter(e => e.date === dateStr);
+    const chips = entries.map(e => {
+      const st = statusOf(e);
+      return `<button class="cal-chip cal-${st}" data-cal-entry="${e.id}"
+        title="${esc(e.kol)} — ${esc(e.what)}${e.time?' · '+esc(e.time):''}">
+        <span class="cc-k">${esc(e.kol)}</span><span class="cc-w">${esc(e.what)}</span></button>`;
+    }).join('');
+    return `<div class="cal-cell${dateStr===today?' cal-today':''}">
+      <div class="cal-daynum">${d}</div>
+      <div class="cal-entries">${chips}</div>
+    </div>`;
+  }).join('');
+
+  box.innerHTML = `
+    <div class="cal-nav">
+      <button class="btn-line sm" id="calPrev">‹</button>
+      <b class="cal-label">${esc(MONTH_NAMES[m])} ${y}</b>
+      <button class="btn-line sm" id="calNext">›</button>
+      <button class="btn-line sm" id="calToday">Today</button>
+      <div class="cal-filters">
+        <select id="calFilterKol"><option value="">All creators</option>
+          ${kolOptions.map(h => `<option value="${esc(h)}"${schedCalFilters.kol===h?' selected':''}>${esc(h)}</option>`).join('')}</select>
+        <select id="calFilterType"><option value="">All types</option>
+          ${Object.values(KOL_TYPES).map(t => `<option value="${t.k}"${schedCalFilters.type===t.k?' selected':''}>${esc(t.name)}</option>`).join('')}</select>
+        <select id="calFilterStatus"><option value="">All statuses</option>
+          <option value="booked"${schedCalFilters.status==='booked'?' selected':''}>Booked</option>
+          <option value="overdue"${schedCalFilters.status==='overdue'?' selected':''}>Overdue</option>
+          <option value="done"${schedCalFilters.status==='done'?' selected':''}>Done</option>
+        </select>
+      </div>
+    </div>
+    <div class="cal-grid">${weekdayHead}${dayCells}</div>`;
+
+  el('calPrev').addEventListener('click', () => {
+    schedCalMonth = new Date(Date.UTC(y, m - 1, 1)); renderKolScheduleCalendar();
+  });
+  el('calNext').addEventListener('click', () => {
+    schedCalMonth = new Date(Date.UTC(y, m + 1, 1)); renderKolScheduleCalendar();
+  });
+  el('calToday').addEventListener('click', () => {
+    schedCalMonth = null; renderKolScheduleCalendar();
+  });
+  el('calFilterKol').addEventListener('change', e => { schedCalFilters.kol = e.target.value; renderKolScheduleCalendar(); });
+  el('calFilterType').addEventListener('change', e => { schedCalFilters.type = e.target.value; renderKolScheduleCalendar(); });
+  el('calFilterStatus').addEventListener('change', e => { schedCalFilters.status = e.target.value; renderKolScheduleCalendar(); });
+  qsa('[data-cal-entry]', box).forEach(b => b.addEventListener('click', () => showScheduleEntry(b.dataset.calEntry)));
+}
+
+/* Quick-view for a single schedule entry, opened from a calendar chip —
+   same actions as the Table view's row (done/reopen, remove, .ics, payment
+   status) so nothing new has to be learned to act from the calendar. */
+function showScheduleEntry(id){
+  const e = (S.schedule || []).find(x => x.id === id);
+  if(!e) return;
+  const today = new Date().toISOString().slice(0,10);
+  const past = e.date < today;
+  const statusPill = e.done ? `<span class="pill p-g">Done</span>`
+    : past ? `<span class="pill p-r">Overdue</span>`
+    : `<span class="pill p-a">Booked</span>`;
+
+  modal(`${e.kol} — ${e.what}`, `
+    <div class="mf2">
+      <div class="mf"><label>Date</label><p>${esc(e.date)}${e.time?' · '+esc(e.time):''}</p></div>
+      <div class="mf"><label>Status</label><p>${statusPill}</p></div>
+    </div>
+    <div class="mf2">
+      <div class="mf"><label>Type</label><p>${KOL_TYPES[e.type]?esc(KOL_TYPES[e.type].name):'—'}</p></div>
+      <div class="mf"><label>Owner</label><p>${esc(e.owner||'—')}</p></div>
+    </div>
+    ${e.note?`<div class="mf"><label>Notes</label><p>${esc(e.note)}</p></div>`:''}
+    <div class="mf2">
+      <div class="mf"><label>Fee</label><p>${e.feeAgreed?esc(S.settings.cur+e.feeAgreed):'—'}</p></div>
+      <div class="mf"><label>Payment</label>${payCell(e)}</div>
+    </div>`,
+    [['Close','x'], ['Calendar','ics'], [e.done?'Reopen':'Mark done','done'],
+      ...(isAdmin()||!e.done ? [['Remove','del']] : [])], a => {
+      if(a === 'ics'){ downloadIcs(e); return false; }
+      if(a === 'done'){ e.done = !e.done; save(); renderKol(); return true; }
+      if(a === 'del'){ S.schedule = S.schedule.filter(x=>x.id!==id); save(); renderKol(); toast('Removed from the schedule'); return true; }
+      return true;
+    });
+  qsa('[data-pay]').forEach(s => s.addEventListener('change', () => {
+    const ent = S.schedule.find(x=>x.id===s.dataset.pay);
+    if(ent){ ent.paidStatus = s.value; save(); renderKol(); }
+  }));
+}
+
 /* .ics so it drops into any calendar app */
 function icsDate(d, t){
   const [y,m,dd] = d.split('-');
@@ -870,16 +1001,20 @@ function renderKolActivation(){
   </table></div>`;
 }
 
-/* Schedule Table/Board toggle — static buttons, wired once. */
+/* Schedule Table/Board/Calendar toggle — static buttons, wired once. */
 const schedViewTableBtn = el('schedViewTable');
 const schedViewBoardBtn = el('schedViewBoard');
+const schedViewCalBtn = el('schedViewCal');
 function setSchedView(v){
   schedView = v;
   if(schedViewTableBtn) schedViewTableBtn.classList.toggle('on', v === 'table');
   if(schedViewBoardBtn) schedViewBoardBtn.classList.toggle('on', v === 'board');
-  const t = el('kolSched'), b = el('kolSchedBoard');
+  if(schedViewCalBtn) schedViewCalBtn.classList.toggle('on', v === 'cal');
+  const t = el('kolSched'), b = el('kolSchedBoard'), c = el('kolSchedCal');
   if(t) t.hidden = v !== 'table';
   if(b) b.hidden = v !== 'board';
+  if(c) c.hidden = v !== 'cal';
 }
 if(schedViewTableBtn) schedViewTableBtn.addEventListener('click', () => setSchedView('table'));
 if(schedViewBoardBtn) schedViewBoardBtn.addEventListener('click', () => setSchedView('board'));
+if(schedViewCalBtn) schedViewCalBtn.addEventListener('click', () => setSchedView('cal'));
