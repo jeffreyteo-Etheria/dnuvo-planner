@@ -69,7 +69,7 @@ function renderSessions(){
           SESSIONS.push(snapshot('Before restoring ' + s.name, 'Auto-saved'));
           saveSessions();
         }
-        S = JSON.parse(JSON.stringify(s.data));
+        S = normalizeState(JSON.parse(JSON.stringify(s.data)));
         save(); renderAll(); renderKol(); renderSessions();
         toast('Session restored');
         return true;
@@ -200,7 +200,7 @@ function renderSync(){
         Pulling replaces what is in this browser. Save a session first if you have unsaved work.</p>`,
         [['Cancel','x'],['Pull and replace','ok']], a => {
           if(a!=='ok') return true;
-          S = d.current; SESSIONS = d.sessions || [];
+          S = normalizeState(d.current); SESSIONS = d.sessions || [];
           save(); saveSessions(); renderAll(); renderKol(); renderSync(); renderSessions();
           toast('Pulled from GitHub');
           return true;
@@ -278,7 +278,7 @@ function renderLiveSyncPane(){
         Pulling replaces what is in this browser. Save a session first if you have unsaved work.</p>`,
         [['Cancel','x'],['Pull and replace','ok']], a => {
           if(a!=='ok') return true;
-          S = d.current; SESSIONS = d.sessions || SESSIONS;
+          S = normalizeState(d.current); SESSIONS = d.sessions || SESSIONS;
           save(); saveSessions(); renderAll(); renderKol(); renderLiveSyncPane(); renderSessions();
           toast('Pulled from the shared workspace');
           return true;

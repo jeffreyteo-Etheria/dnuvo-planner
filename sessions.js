@@ -151,6 +151,49 @@ async function liveSyncPull(){
   return parsed;
 }
 
+/* Runs once per app open, only if Live sync is already configured — nothing
+   changes for anyone who hasn't set a workspace key. Goal: a browser that
+   was just left open, or opened fresh, shouldn't show data that's gone
+   stale because nobody remembered to click Pull. Safe to fail quietly —
+   the real error still shows up if the user pulls manually from the
+   Sessions drawer. Never overwrites local work the workspace hasn't seen
+   yet; that case is handed to the user instead of guessed at. */
+async function liveSyncAutoPullOnBoot(){
+  if(!LIVESYNC.key) return;
+  const prevLastPull = LIVESYNC.lastPull;
+  let d;
+  try{ d = await liveSyncPull(); }
+  catch(e){ return; }
+
+  const workspaceIsNewer = !prevLastPull || d.savedAt > prevLastPull;
+  if(!workspaceIsNewer) return;
+
+  const localEdit = lastLocalEditAt();
+  const hasUnpushedLocalWork = !!localEdit && (!LIVESYNC.lastPush || localEdit > LIVESYNC.lastPush);
+
+  if(!hasUnpushedLocalWork){
+    S = normalizeState(d.current); SESSIONS = d.sessions || SESSIONS;
+    save(); saveSessions(); renderAll(); renderKol();
+    if(typeof renderLiveSyncPane === 'function' && el('liveSyncPane')) renderLiveSyncPane();
+    toast('Synced with the latest shared workspace data');
+    return;
+  }
+
+  modal('Newer data on the shared workspace', `<p style="font-size:13.5px;color:var(--mute);line-height:1.6">
+    This browser has changes that were never pushed, and the shared workspace was last saved
+    <b style="color:var(--ink)">${esc(new Date(d.savedAt).toLocaleString())}</b>.</p>
+    <p style="font-size:13px;color:var(--mute);margin-top:10px">
+    These can't be merged automatically — pick which one should win. If unsure, keep your local
+    changes and push them from Sessions → Live sync once you've confirmed they're the right ones.</p>`,
+    [['Keep my local changes','x'],['Use the shared workspace','ok']], a => {
+      if(a !== 'ok') return true;
+      S = normalizeState(d.current); SESSIONS = d.sessions || SESSIONS;
+      save(); saveSessions(); renderAll(); renderKol();
+      toast('Loaded the latest shared workspace data');
+      return true;
+    });
+}
+
 /* ── exporters ───────────────────────────────────
    Each section can leave as JSON, CSV or Markdown. */
 

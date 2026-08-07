@@ -12,30 +12,56 @@ let S = {};          // persisted store
 let role = null;     // 'admin' | 'team'
 let view = 'overview';
 
-/* ── persistence ── */
+/* ── persistence ──
+   normalizeState() is the single place that backfills fields a stored
+   plan might be missing — a browser's own localStorage, a pulled Live
+   sync workspace, a GitHub gist, or a restored session snapshot can all
+   predate a field this build expects, and rendering against `undefined`
+   crashes rather than showing a stale-but-safe value. Every path that
+   replaces S wholesale (not just the boot-time load) must go through
+   this, or a same-shaped-but-older payload takes the app down instead
+   of just looking behind. */
+function normalizeState(obj){
+  const s = obj || {};
+  s.settings = Object.assign({}, DEFAULTS, s.settings || {});
+  s.skus     = s.skus     || SKUS.map(x => Object.assign({}, x));
+  s.months   = s.months   || MONTHS.map(m => ({ k:m.k, units:m.units, price:m.price }));
+  s.compIntel = s.compIntel || COMPETITOR_INTEL.map(r => Object.assign({}, r));
+  s.kols     = s.kols     || [];
+  s.requests = s.requests || [];
+  s.checks   = s.checks   || {};
+  s.gates    = s.gates    || { reviews:0, rating:0, roas:0, pool:0, buyers:0 };
+  s.actuals  = s.actuals  || {};
+  s.notes    = s.notes    || {};
+  s.proposals = s.proposals || [];
+  s.bundleOverrides = s.bundleOverrides || {};
+  s.schedule = s.schedule || [];
+  s.sendLog  = s.sendLog  || [];
+  return s;
+}
 function load(){
-  try{ S = JSON.parse(localStorage.getItem(KEY) || '{}'); }catch(e){ S = {}; }
-  S.settings = Object.assign({}, DEFAULTS, S.settings || {});
-  S.skus     = S.skus     || SKUS.map(s => Object.assign({}, s));
-  S.months   = S.months   || MONTHS.map(m => ({ k:m.k, units:m.units, price:m.price }));
-  S.compIntel = S.compIntel || COMPETITOR_INTEL.map(r => Object.assign({}, r));
-  S.kols     = S.kols     || [];
-  S.requests = S.requests || [];
-  S.checks   = S.checks   || {};
-  S.gates    = S.gates    || { reviews:0, rating:0, roas:0, pool:0, buyers:0 };
-  S.actuals  = S.actuals  || {};
-  S.notes    = S.notes    || {};
-  S.proposals = S.proposals || [];
-  S.bundleOverrides = S.bundleOverrides || {};
-  S.schedule = S.schedule || [];
-  S.sendLog  = S.sendLog  || [];
+  let parsed;
+  try{ parsed = JSON.parse(localStorage.getItem(KEY) || '{}'); }catch(e){ parsed = {}; }
+  S = normalizeState(parsed);
 }
 let saveT;
 function save(){
   try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){}
+  markLocalEdit();
   const d = el('saveDot'); if(!d) return;
   d.classList.add('on'); clearTimeout(saveT);
   saveT = setTimeout(()=>d.classList.remove('on'), 1100);
+}
+
+/* When this browser last changed the plan — compared against Live sync's
+   lastPush/lastPull so boot-time auto-pull can tell "safe to replace
+   silently" from "this browser has edits the workspace hasn't seen yet." */
+const LOCAL_EDIT_KEY = 'dnuvo_localedit_v1';
+function markLocalEdit(){
+  try{ localStorage.setItem(LOCAL_EDIT_KEY, new Date().toISOString()); }catch(e){}
+}
+function lastLocalEditAt(){
+  try{ return localStorage.getItem(LOCAL_EDIT_KEY) || null; }catch(e){ return null; }
 }
 
 /* ── helpers ── */
@@ -92,6 +118,10 @@ function enter(r){
   applyACL();
   renderWho();
   boot();
+  // Paint immediately from whatever's local, then check the shared workspace
+  // in the background — this is what makes "latest data" not depend on
+  // someone remembering to click Pull.
+  if(typeof liveSyncAutoPullOnBoot === 'function') liveSyncAutoPullOnBoot();
 }
 function applyACL(){
   qsa('.nav-i').forEach(b => {
