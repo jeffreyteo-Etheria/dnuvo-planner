@@ -1391,9 +1391,10 @@ el('apifyBtn').addEventListener('click', () => {
 const kolTplBtn = el('kolTpl');
 if(kolTplBtn) kolTplBtn.addEventListener('click', () => {
   const rows = [
-    ['type','handle','platform','name','tier','followers','audience','contact','source','er','posts','rate','avgViews','avgGmv','gpm','retention','fee','notes'],
-    ['ugc','@creator_handle','TikTok','Creator Name','Nano','','','','','','','','','','','','',''],
-    ['live','@live_handle','TikTok','Live Seller','Micro','','','','','','','','12000','6000','','6m 20s','200','']
+    ['type','handle','platform','name','tier','followers','audience','contact','contactMethod','source','sourceAgency',
+     'er','posts','rate','avgViews','avgGmv','gpm','retention','fee','commission','paymentTerms','proofLink','adCode','notes','stage'],
+    ['ugc','@creator_handle','TikTok','Creator Name','Nano','','','','','','','','','','','','','','','','','','','',''],
+    ['live','@live_handle','TikTok','Live Seller','Micro','','','','','','','','','','12000','6000','','6m 20s','200','','','','','','']
   ];
   if(typeof toCSV === 'function' && typeof dl === 'function'){
     dl('dnuvo-kol-import-template-' + stamp() + '.csv', toCSV(rows), 'text/csv;charset=utf-8');
@@ -1412,23 +1413,39 @@ if(kolImportBtn && kolImportFile){
     r.onload = () => {
       if(typeof parseCsvObjects !== 'function'){ toast('CSV parser not available'); return; }
       const rowsIn = parseCsvObjects(String(r.result || ''));
-      let added = 0;
+      // Keyed on type+handle, not handle alone — the same person can legitimately
+      // have both a UGC and a Livestream record, since this app tracks those as
+      // two separate rosters evaluated on different things.
+      const existing = new Set(S.kols.map(k => (k.type||'ugc') + '|' + (k.handle||'').toLowerCase()));
+      let added = 0, skipped = 0;
       rowsIn.forEach(x => {
         if(!x.handle) return;
+        const handle = x.handle.startsWith('@') ? x.handle : ('@' + x.handle);
+        const type = (x.type === 'live' ? 'live' : 'ugc');
+        const key = type + '|' + handle.toLowerCase();
+        if(existing.has(key)){ skipped++; return; }
+        const stage = KOL_PIPE.find(s => s.k === (x.stage||'').trim()) ? x.stage.trim() : 'sourced';
+        const commission = COMMISSION_OPTIONS.includes((x.commission||'').trim()) ? x.commission.trim() : '';
         S.kols.push({
-          type: (x.type === 'live' ? 'live' : 'ugc'),
-          handle: x.handle.startsWith('@') ? x.handle : ('@' + x.handle),
-          platform: x.platform || 'TikTok',
+          id: 'K'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
+          type, handle, platform: x.platform || 'TikTok',
           name: x.name || '', tier: x.tier || 'Nano',
-          followers: x.followers || '', audience: x.audience || '', contact: x.contact || '', source: x.source || '',
+          followers: x.followers || '', audience: x.audience || '', contact: x.contact || '',
+          contactMethod: CONTACT_METHODS.includes((x.contactmethod||'').trim()) ? x.contactmethod.trim() : '',
+          source: x.source || '', sourceAgency: x.sourceagency || '',
           er: x.er || '', posts: x.posts || '', rate: x.rate || '',
           avgViews: x.avgviews || '', avgGmv: x.avggmv || '', gpm: x.gpm || '', retention: x.retention || '', fee: x.fee || '',
-          notes: x.notes || '', stage: 'sourced'
+          commission, paymentTerms: x.paymentterms || '', proofLink: x.prooflink || '', adCode: x.adcode || '',
+          notes: x.notes || '', stage, fit: {}
         });
+        existing.add(key);
         added++;
       });
-      if(added){ save(); if(typeof renderKol === 'function') renderKol(); renderOverview(); toast(added + ' creators imported'); }
-      else toast('No valid creator rows found');
+      if(added){
+        save(); if(typeof renderKol === 'function') renderKol(); renderOverview();
+        toast(added + ' creators imported' + (skipped ? ', ' + skipped + ' skipped (already in roster)' : ''));
+      }
+      else toast(skipped ? 'All ' + skipped + ' rows were already in the roster' : 'No valid creator rows found');
     };
     r.readAsText(f);
     e.target.value = '';

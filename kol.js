@@ -12,7 +12,49 @@ let kolStage = 'creators';
 let schedView = 'table';
 let schedCalMonth = null;
 let schedCalFilters = { kol:'', type:'', status:'' };
+let kolWarmthFilter = 'priority';
+const KOL_WARMTH_FILTERS = [
+  { k:'priority',  name:'Priority — Warm, Confirmed & Completed' },
+  { k:'confirmed', name:'Confirmed only' },
+  { k:'completed', name:'Completed only' },
+  { k:'warm',      name:'Warm only' },
+  { k:'cold',      name:'Cold only' },
+  { k:'all',       name:'All, including Declined' }
+];
+const SCHED_BOARD_TONE = { planned:'p-n', confirmed:'p-v', live:'p-a', done:'p-g' };
 function schedBoardOf(e){ return e.board || (e.done ? 'done' : 'planned'); }
+/* Cold = never contacted. Warm = in conversation. Confirmed = terms locked
+   or booked. Completed = delivered. Declined only shows under "All" — it
+   isn't folded into any of the four so a genuinely dead lead can't quietly
+   inflate a bucket someone's using to decide who to chase next. */
+function warmthOf(k){
+  if(k.stage === 'declined') return 'declined';
+  const g = KOL_WARMTH.find(w => w.stages.includes(k.stage));
+  return g ? g.k : 'cold';
+}
+/* Most relevant schedule entry for this creator — the nearest thing still
+   upcoming, or failing that the most recent thing already done. Powers the
+   roster table's Schedule column so a planner doesn't have to cross-reference
+   the Post stage separately to see if someone's actually booked. */
+function scheduleStatusFor(handle){
+  const entries = (S.schedule || []).filter(e => e.kol === handle);
+  if(!entries.length) return null;
+  const today = new Date().toISOString().slice(0,10);
+  const upcoming = entries.filter(e => e.date >= today).sort((a,b) => a.date.localeCompare(b.date));
+  const past = entries.filter(e => e.date < today).sort((a,b) => b.date.localeCompare(a.date));
+  return upcoming[0] || past[0];
+}
+/* Clickable profile link — only for platforms with a reliable public
+   @handle URL pattern. Shopee Live and Xiaohongshu don't have one, so
+   those stay plain text rather than link to a guess. */
+function profileUrl(k){
+  const h = (k.handle || '').replace(/^@/, '');
+  if(!h) return '';
+  if(k.platform === 'TikTok') return 'https://www.tiktok.com/@' + h;
+  if(k.platform === 'Instagram') return 'https://www.instagram.com/' + h;
+  if(k.platform === 'YouTube') return 'https://www.youtube.com/@' + h;
+  return '';
+}
 const KOL_STAGE_TABS = [
   { k:'creators', name:'Creators', desc:'Source, verify, select' },
   { k:'content',  name:'Content',  desc:'Brief and coordinate' },
@@ -59,6 +101,14 @@ function isLocked(k){
 function canDelete(k){
   return isAdmin() || !isLocked(k);
 }
+/* A creator can only be marked Complete once there's something to point to
+   as proof — either on the record itself (for undated deliverables like a
+   UGC post logged without a schedule entry) or on a linked schedule entry
+   (for anything with a real date, e.g. a livestream session). */
+function hasProof(k){
+  if(k.proofLink) return true;
+  return (S.schedule || []).some(e => e.kol === k.handle && e.proofLink);
+}
 /* Payment status on a schedule entry — admin edits, team reads only,
    same split as fee/rate pricing elsewhere in KOL hub. */
 function payCell(e){
@@ -92,6 +142,7 @@ function renderKol(){
   renderKolStageTabs();
   renderKolTabs();
   renderKolPipe();
+  renderWarmthFilter();
   renderKolTable();
   renderKolActivation();
   renderKolPayments();
@@ -145,9 +196,30 @@ function renderKolPipe(){
   }));
 }
 
+function renderWarmthFilter(){
+  const box = el('warmthFilterBox'); if(!box) return;
+  const list = S.kols.filter(k => (k.type||'ugc') === kolTab);
+  const counts = { priority:0, confirmed:0, completed:0, warm:0, cold:0, all:list.length };
+  list.forEach(k => {
+    const w = warmthOf(k);
+    if(w !== 'declined' && w !== 'cold') counts.priority++;
+    if(counts[w] != null) counts[w]++;
+  });
+  box.innerHTML = `<label>Show
+    <select id="warmthSel">${KOL_WARMTH_FILTERS.map(f =>
+      `<option value="${f.k}"${kolWarmthFilter===f.k?' selected':''}>${esc(f.name)} (${counts[f.k]||0})</option>`).join('')}</select></label>`;
+  el('warmthSel').addEventListener('change', e => { kolWarmthFilter = e.target.value; renderKolTable(); });
+}
+
 function renderKolTable(){
   const active = qsa('.pipe-s.on').map(b => b.dataset.stage);
   let list = S.kols.filter(k => (k.type||'ugc') === kolTab);
+  list = list.filter(k => {
+    if(kolWarmthFilter === 'all') return true;
+    const w = warmthOf(k);
+    if(kolWarmthFilter === 'priority') return w !== 'cold' && w !== 'declined';
+    return w === kolWarmthFilter;
+  });
   if(active.length) list = list.filter(k => active.includes(k.stage));
 
   el('kolEmpty').hidden = list.length > 0;
@@ -160,12 +232,29 @@ function renderKolTable(){
   }
 
   const v = x => x ? esc(x) : '<span class="nv">not verified</span>';
+  const handleCell = k => {
+    const url = profileUrl(k);
+    const b = url
+      ? `<a href="${esc(url)}" target="_blank" rel="noopener" class="k-handle-link">${esc(k.handle)}</a>`
+      : esc(k.handle);
+    return `<b>${b}</b><span class="sub">${esc(k.platform||'')}${k.name?' · '+esc(k.name):''}</span>`;
+  };
+  const contactCell = k => k.contact
+    ? `${esc(k.contact)}${k.contactMethod?` <span class="pill p-n">${esc(k.contactMethod)}</span>`:''}`
+    : '<span class="nv">not verified</span>';
+  const schedCell = k => {
+    const e = scheduleStatusFor(k.handle);
+    if(!e) return '<span class="nv">none</span>';
+    const b = schedBoardOf(e);
+    const name = (SCHED_BOARD.find(x=>x.k===b)||{}).name || b;
+    return `<span class="pill ${SCHED_BOARD_TONE[b]||'p-n'}">${esc(name)}</span><span class="sub">${esc(e.date)}</span>`;
+  };
 
   const head = kolTab === 'ugc'
     ? `<th>Creator</th><th>Tier</th><th class="n">Followers</th><th class="n">Engagement</th>
-       <th class="n">Posts</th><th>Audience</th><th>Contact</th><th class="n">Rate</th><th>Stage</th><th></th>`
+       <th class="n">Posts</th><th>Audience</th><th>Contact</th><th class="n">Rate</th><th>Schedule</th><th>Stage</th><th></th>`
     : `<th>Creator</th><th class="n">Followers</th><th class="n">Avg views</th><th class="n">GPM</th>
-       <th>Band</th><th class="n">Fit</th><th>Recommended terms</th><th>Contact</th><th>Stage</th><th></th>`;
+       <th>Band</th><th class="n">Fit</th><th>Recommended terms</th><th>Contact</th><th>Schedule</th><th>Stage</th><th></th>`;
 
   el('kolTable').innerHTML = `<thead><tr>${head}</tr></thead><tbody>` + list.map(k => {
     const i = S.kols.indexOf(k);
@@ -183,14 +272,15 @@ function renderKolTable(){
     </div>`;
 
     if(kolTab === 'ugc'){
-      return `<tr><td><b>${esc(k.handle)}</b><span class="sub">${esc(k.platform||'')}${k.name?' · '+esc(k.name):''}</span></td>
+      return `<tr><td>${handleCell(k)}</td>
         <td><span class="pill p-n">${esc(k.tier||'—')}</span></td>
         <td class="n">${v(k.followers)}</td>
         <td class="n">${k.er?esc(k.er)+'%':'<span class="nv">—</span>'}</td>
         <td class="n">${v(k.posts)}</td>
         <td style="font-size:12px">${v(k.audience)}</td>
-        <td style="font-size:12px">${v(k.contact)}</td>
+        <td style="font-size:12px">${contactCell(k)}</td>
         <td class="n">${k.rate?esc(S.settings.cur+k.rate):'<span class="nv">—</span>'}${kolPendingBadge(k,'rate')}</td>
+        <td>${schedCell(k)}</td>
         <td>${stageSel}</td><td>${acts}</td></tr>`;
     }
 
@@ -198,15 +288,21 @@ function renderKolTable(){
     const band = gpmBand(g);
     const sc = scenarioFor(k);
     const score = fitScore(k);
-    return `<tr><td><b>${esc(k.handle)}</b><span class="sub">${esc(k.platform||'')}${k.name?' · '+esc(k.name):''}</span></td>
+    const hasAgreed = k.commission || k.fee;
+    const termsCell = hasAgreed
+      ? `<span class="pill p-g">Agreed</span>
+         <span class="sub">${k.fee?esc(S.settings.cur+k.fee):'no fixed fee'}${k.commission?' + '+esc(k.commission):''}</span>`
+      : `<span class="pill ${sc.tone}">${sc.name}</span>
+         <span class="sub">${sc.fee?S.settings.cur+sc.fee.toLocaleString()+' + '+sc.comm+'%':'commission only'}${sc.capped?' · capped':''}</span>`;
+    return `<tr><td>${handleCell(k)}</td>
       <td class="n">${v(k.followers)}</td>
       <td class="n">${v(k.avgViews)}</td>
       <td class="n">${g?'$'+Math.round(g).toLocaleString():'<span class="nv">—</span>'}</td>
       <td><span class="pill ${band.tone}">${band.label}</span></td>
       <td class="n"><span class="fit-s ${score>=10?'f3':score>=8?'f2':score>=5?'f1':'f0'}">${score}/10</span></td>
-      <td><span class="pill ${sc.tone}">${sc.name}</span>
-        <span class="sub">${sc.fee?S.settings.cur+sc.fee.toLocaleString()+' + '+sc.comm+'%':'commission only'}${sc.capped?' · capped':''}</span></td>
-      <td style="font-size:12px">${v(k.contact)}</td>
+      <td>${termsCell}</td>
+      <td style="font-size:12px">${contactCell(k)}</td>
+      <td>${schedCell(k)}</td>
       <td>${stageSel}</td><td>${acts}</td></tr>`;
   }).join('') + `</tbody>`;
 
@@ -216,6 +312,10 @@ function renderKolTable(){
     const next = KOL_PIPE.find(p => p.k === s.value);
     if(!isAdmin() && wasLocked && !next.locked){
       toast('Only an administrator can move a record back out of an approved stage');
+      s.value = k.stage; return;
+    }
+    if(next.k === 'done' && !hasProof(k)){
+      toast('Add a posting/stream link (proof of delivery) before marking this Complete');
       s.value = k.stage; return;
     }
     k.stage = s.value; save(); renderKol(); renderOverview();
@@ -249,8 +349,12 @@ function kolForm(idx, pre){
         ${['Nano','Micro','Macro'].map(t=>`<option${k.tier===t?' selected':''}>${t}</option>`).join('')}</select></div></div>
     <div class="mf2">${f('kFoll','Followers',k.followers,'blank if unverified')}
       ${f('kAud','Audience',k.audience,'e.g. 82% female · 25–34 · SG')}</div>
-    ${f('kContact','Contact',k.contact,'email, agency, or DM open')}
-    ${f('kSource','Source URL',k.source,'where the figures were verified')}`;
+    <div class="mf2">${f('kContact','Contact',k.contact,'email, agency, or DM open')}
+      <div class="mf"><label>Contact method</label><select id="kContactMethod"${locked?' disabled':''}>
+        <option value=""${!k.contactMethod?' selected':''}>Not set</option>
+        ${CONTACT_METHODS.map(m=>`<option${k.contactMethod===m?' selected':''}>${m}</option>`).join('')}</select></div></div>
+    ${f('kSource','Source URL',k.source,'where the figures were verified')}
+    ${f('kSourceAgency','Sourcing agency',k.sourceAgency,'blank if sourced directly, e.g. Atisfyre')}`;
 
   const pricingHint = field => {
     if(idx < 0 || !k.id) return '';
@@ -273,6 +377,18 @@ function kolForm(idx, pre){
       ${f('kRet','Average view time',k.retention,'e.g. 6m 20s')}</div>
     ${f('kFee','Agreed fixed fee',k.fee,'in ' + S.settings.cur, pricingHint('fee'))}`;
 
+  const termsBlock = `
+    <div class="mf2">
+      <div class="mf"><label>Commission</label><select id="kCommission"${locked?' disabled':''}>
+        <option value=""${!k.commission?' selected':''}>Not agreed</option>
+        ${COMMISSION_OPTIONS.map(c=>`<option${k.commission===c?' selected':''}>${c}</option>`).join('')}</select></div>
+      ${f('kPaymentTerms','Payment terms',k.paymentTerms,'e.g. 50% on confirmation, 50% on delivery')}</div>`;
+
+  const proofBlock = `
+    <div class="mf2">${f('kProofLink','Proof of delivery link',k.proofLink,'posted content or stream link',
+      'Required before this record can be marked Complete, unless a linked schedule entry already has one.')}
+      ${f('kAdCode','Ad code',k.adCode,'spark ad code, if issued')}</div>`;
+
   const body = `
     <div class="mf"><label>Creator type</label>
       <div class="type-pick">${Object.values(KOL_TYPES).map(t=>
@@ -281,6 +397,8 @@ function kolForm(idx, pre){
           <b>${esc(t.name)}</b><span>${esc(t.goal)}</span></label>`).join('')}</div></div>
     ${common}
     ${type === 'ugc' ? ugcOnly : liveOnly}
+    ${termsBlock}
+    ${proofBlock}
     <div class="mf"><label>Notes</label>
       <textarea id="kNotes" rows="3"${locked?' readonly':''}>${esc(k.notes||'')}</textarea></div>
     <div class="mf verify-note">Leave a field blank when you could not verify it.
@@ -308,7 +426,11 @@ function kolForm(idx, pre){
       platform: el('kPlat').value, name: el('kName').value.trim(),
       tier: el('kTier').value, followers: el('kFoll').value.trim(),
       audience: el('kAud').value.trim(), contact: el('kContact').value.trim(),
-      source: el('kSource').value.trim(), notes: el('kNotes').value.trim(),
+      contactMethod: el('kContactMethod').value,
+      source: el('kSource').value.trim(), sourceAgency: el('kSourceAgency').value.trim(),
+      commission: el('kCommission').value, paymentTerms: el('kPaymentTerms').value.trim(),
+      proofLink: el('kProofLink').value.trim(), adCode: el('kAdCode').value.trim(),
+      notes: el('kNotes').value.trim(),
       stage: existing ? existing.stage : 'sourced'
     });
     // Pricing on an existing record needs admin approval — team edits are held
@@ -498,7 +620,12 @@ function schedForm(idx){
       <div class="mf"><label>Time</label><input type="time" id="scTime" value="19:00"></div>
       <div class="mf"><label>Owner</label><input id="scOwner" placeholder="Who is running it"></div>
     </div>
-    <div class="mf"><label>Notes</label><textarea id="scNote" rows="2" placeholder="Offer, bundle price, talking points"></textarea></div>`,
+    <div class="mf"><label>Notes</label><textarea id="scNote" rows="2" placeholder="Offer, bundle price, talking points"></textarea></div>
+    <div class="mf2">
+      <div class="mf"><label>Proof of delivery link</label><input id="scProof" placeholder="fill in once posted/streamed">
+        <p class="fh">Required before this entry can be marked done — can be left blank now and added later.</p></div>
+      <div class="mf"><label>Ad code</label><input id="scAdCode" placeholder="if issued"></div>
+    </div>`,
     [['Cancel','x'],['Add to schedule','ok']], a => {
       if(a !== 'ok') return true;
       S.schedule = S.schedule || [];
@@ -506,6 +633,7 @@ function schedForm(idx){
         id:'E'+Date.now().toString(36), kol:k.handle, type,
         what: el('scType').value, date: el('scDate').value, time: el('scTime').value,
         owner: el('scOwner').value.trim(), note: el('scNote').value.trim(),
+        proofLink: el('scProof').value.trim(), adCode: el('scAdCode').value.trim(),
         done:false, board:'planned',
         feeAgreed: num(type === 'live' ? k.fee : k.rate) || 0, paidStatus:'unpaid',
         at:new Date().toISOString()
@@ -529,7 +657,7 @@ function renderKolSchedule(){
   const today = new Date().toISOString().slice(0,10);
   box.innerHTML = `<div class="tb-wrap"><table class="tb" id="schedTable">
     <thead><tr><th>Date</th><th>Time</th><th>Creator</th><th>Type</th><th>Deliverable</th>
-      <th>Owner</th><th>Notes</th><th>Status</th><th class="n">Fee</th><th>Payment</th><th></th></tr></thead><tbody>` +
+      <th>Owner</th><th>Notes</th><th>Proof</th><th>Status</th><th class="n">Fee</th><th>Payment</th><th></th></tr></thead><tbody>` +
     all.map(e => {
       const past = e.date < today;
       const kol = S.kols.find(x => x.handle === e.kol);
@@ -541,6 +669,9 @@ function renderKolSchedule(){
         <td>${esc(e.what)}</td>
         <td>${esc(e.owner||'—')}</td>
         <td style="font-size:12px;color:var(--mute)">${esc(e.note||'')}</td>
+        <td>${e.proofLink
+          ?`<a href="${esc(e.proofLink)}" target="_blank" rel="noopener" class="k-handle-link">Link</a>`
+          :`<button class="btn-line sm" data-scproof="${e.id}">Add link</button>`}</td>
         <td>${e.done?`<span class="pill p-g">Done</span>`
               :past?`<span class="pill p-r">Overdue</span>`
               :`<span class="pill p-a">Booked</span>`}</td>
@@ -555,11 +686,19 @@ function renderKolSchedule(){
 
   qsa('[data-scdone]').forEach(b => b.addEventListener('click', () => {
     const e = S.schedule.find(x=>x.id===b.dataset.scdone);
-    e.done = !e.done; save(); renderKolSchedule();
+    if(!e.done && !e.proofLink){
+      toast('Add a proof-of-delivery link before marking this done — open the entry from the Calendar to add one');
+      return;
+    }
+    e.done = !e.done; e.board = e.done ? 'done' : 'planned';
+    save(); renderKol();
   }));
   qsa('[data-scdel]').forEach(b => b.addEventListener('click', () => {
     S.schedule = S.schedule.filter(x=>x.id!==b.dataset.scdel);
     save(); renderKolSchedule(); toast('Removed from the schedule');
+  }));
+  qsa('[data-scproof]').forEach(b => b.addEventListener('click', () => {
+    showScheduleEntry(b.dataset.scproof);
   }));
   qsa('[data-scics]').forEach(b => b.addEventListener('click', () => {
     downloadIcs(S.schedule.find(x=>x.id===b.dataset.scics));
@@ -592,6 +731,7 @@ function renderKolScheduleBoard(){
           <span class="sc-date">${esc(e.date)}${e.time?' · '+esc(e.time):''}</span>
           ${e.feeAgreed ? `<span class="sc-fee">${esc(S.settings.cur+e.feeAgreed)} · ${
             (e.paidStatus||'unpaid')==='paid'?'Paid':(e.paidStatus||'unpaid')==='deposit'?'Deposit paid':'Unpaid'}</span>` : ''}
+          <span class="sc-proof ${e.proofLink?'has':''}">${e.proofLink?'Proof on file':'No proof yet'}</span>
         </div>`).join('') || '<p class="sched-empty">Nothing here</p>'}
       </div>
     </div>`;
@@ -619,6 +759,11 @@ function renderKolScheduleBoard(){
       const e = (S.schedule||[]).find(x => x.id === id);
       if(!e) return;
       const colKey = col.dataset.coldrop;
+      if(colKey === 'done' && !e.proofLink){
+        toast('Add a proof-of-delivery link before moving this to Done');
+        renderKolScheduleBoard();
+        return;
+      }
       e.board = colKey;
       e.done = (colKey === 'done');
       save();
@@ -742,14 +887,31 @@ function showScheduleEntry(id){
     <div class="mf2">
       <div class="mf"><label>Fee</label><p>${e.feeAgreed?esc(S.settings.cur+e.feeAgreed):'—'}</p></div>
       <div class="mf"><label>Payment</label>${payCell(e)}</div>
+    </div>
+    <div class="mf2">
+      <div class="mf"><label>Proof of delivery link</label>
+        <input id="seProof" value="${esc(e.proofLink||'')}" placeholder="posted content or stream link">
+        <p class="fh">Required before this can be marked done.</p></div>
+      <div class="mf"><label>Ad code</label><input id="seAdCode" value="${esc(e.adCode||'')}" placeholder="if issued"></div>
     </div>`,
     [['Close','x'], ['Calendar','ics'], [e.done?'Reopen':'Mark done','done'],
       ...(isAdmin()||!e.done ? [['Remove','del']] : [])], a => {
       if(a === 'ics'){ downloadIcs(e); return false; }
-      if(a === 'done'){ e.done = !e.done; save(); renderKol(); return true; }
+      if(a === 'done'){
+        const proofNow = el('seProof').value.trim();
+        if(!e.done && !proofNow){
+          toast('Add a proof-of-delivery link before marking this done');
+          return false;
+        }
+        e.proofLink = proofNow; e.adCode = el('seAdCode').value.trim();
+        e.done = !e.done; e.board = e.done ? 'done' : 'planned';
+        save(); renderKol(); return true;
+      }
       if(a === 'del'){ S.schedule = S.schedule.filter(x=>x.id!==id); save(); renderKol(); toast('Removed from the schedule'); return true; }
       return true;
     });
+  el('seProof').addEventListener('change', ev => { e.proofLink = ev.target.value.trim(); save(); });
+  el('seAdCode').addEventListener('change', ev => { e.adCode = ev.target.value.trim(); save(); });
   qsa('[data-pay]').forEach(s => s.addEventListener('change', () => {
     const ent = S.schedule.find(x=>x.id===s.dataset.pay);
     if(ent){ ent.paidStatus = s.value; save(); renderKol(); }

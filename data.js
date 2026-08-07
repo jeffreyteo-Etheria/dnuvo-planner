@@ -967,6 +967,18 @@ const KOL_PIPE = [
   { k:'declined',  name:'Declined',   desc:'Not proceeding. Kept for the record.',   locked:true  }
 ];
 
+/* Coarse warm/cold view over KOL_PIPE, for prioritizing who actually
+   matters right now over the long tail of unanswered outreach. */
+const KOL_WARMTH = [
+  { k:'confirmed', name:'Confirmed', stages:['approved','scheduled'] },
+  { k:'completed', name:'Completed', stages:['live','done'] },
+  { k:'warm',      name:'Warm',      stages:['contacted','negotiating'] },
+  { k:'cold',      name:'Cold',      stages:['sourced'] }
+];
+
+const CONTACT_METHODS = ['DM','Email','Other'];
+const COMMISSION_OPTIONS = ['15%','20%','30%'];
+
 /* Deliverable types per creator type */
 const DELIVERABLES = {
   ugc: ['Day 0 first impression','Day 14 check-in','Day 30 verdict','Store review','Photo set','Spark Ad rights'],
