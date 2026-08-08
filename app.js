@@ -7,6 +7,11 @@
 
 const KEY = 'dnuvo_console_v1';
 const ADMIN_PASS = '1234';
+// Shared team-wide passcode — gates the whole site before the team/admin
+// role picker even appears. Change this to something the team actually
+// knows and keep it out of casual conversation/email; it's a plain
+// constant in this file, same trust model as ADMIN_PASS above.
+const SITE_PASS = 'dnuvo2026';
 
 let S = {};          // persisted store
 let role = null;     // 'admin' | 'team'
@@ -93,6 +98,24 @@ function maxDiscount(sku, commission){
 }
 
 /* ═══════════ AUTH ═══════════ */
+/* Shared site passcode — the very first thing anyone sees. Independent of
+   the team/admin picker below it; unlocking this just reveals that picker,
+   it doesn't pick a role itself. */
+function initSiteGate(){
+  const tryUnlock = () => {
+    if(el('sitePwInput').value === SITE_PASS){
+      el('siteGate').hidden = true;
+      el('gate').hidden = false;
+      el('sitePwInput').value = '';
+    } else {
+      el('sitePwErr').textContent = 'That passcode does not match. Try again.';
+      el('sitePwInput').value = ''; el('sitePwInput').focus();
+    }
+  };
+  el('sitePwGo').addEventListener('click', tryUnlock);
+  el('sitePwInput').addEventListener('keydown', e => { if(e.key === 'Enter') tryUnlock(); });
+  el('sitePwInput').focus();
+}
 function initGate(){
   qsa('.gate-role').forEach(b => b.addEventListener('click', () => {
     if(b.dataset.role === 'team'){ enter('team'); }
@@ -1785,4 +1808,5 @@ function boot(){
 }
 
 load();
+initSiteGate();
 initGate();
