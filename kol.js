@@ -356,13 +356,14 @@ function kolForm(idx, pre){
     ${f('kSource','Source URL',k.source,'where the figures were verified')}
     ${f('kSourceAgency','Sourcing agency',k.sourceAgency,'blank if sourced directly, e.g. Atisfyre')}`;
 
-  const pricingHint = field => {
+  const pricingHint = (field, plain) => {
     if(idx < 0 || !k.id) return '';
     const p = pendingFor('kol', k.id, field);
     if(!p) return '';
+    const val = plain ? esc(p.to) : S.settings.cur + esc(p.to);
     return isAdmin()
-      ? `A team change to ${S.settings.cur}${esc(p.to)} is awaiting your decision — see Pending changes.`
-      : `Your proposed change to ${S.settings.cur}${esc(p.to)} is awaiting an administrator.`;
+      ? `A team change to ${val} is awaiting your decision — see Pending changes.`
+      : `Your proposed change to ${val} is awaiting an administrator.`;
   };
 
   const ugcOnly = `
@@ -381,8 +382,9 @@ function kolForm(idx, pre){
     <div class="mf2">
       <div class="mf"><label>Commission</label><select id="kCommission"${locked?' disabled':''}>
         <option value=""${!k.commission?' selected':''}>Not agreed</option>
-        ${COMMISSION_OPTIONS.map(c=>`<option${k.commission===c?' selected':''}>${c}</option>`).join('')}</select></div>
-      ${f('kPaymentTerms','Payment terms',k.paymentTerms,'e.g. 50% on confirmation, 50% on delivery')}</div>`;
+        ${COMMISSION_OPTIONS.map(c=>`<option${k.commission===c?' selected':''}>${c}</option>`).join('')}</select>
+        ${pricingHint('commission', true)?`<p class="fh">${pricingHint('commission', true)}</p>`:''}</div>
+      ${f('kPaymentTerms','Payment terms',k.paymentTerms,'e.g. 50% on confirmation, 50% on delivery', pricingHint('paymentTerms', true))}</div>`;
 
   const proofBlock = `
     <div class="mf2">${f('kProofLink','Proof of delivery link',k.proofLink,'posted content or stream link',
@@ -428,13 +430,14 @@ function kolForm(idx, pre){
       audience: el('kAud').value.trim(), contact: el('kContact').value.trim(),
       contactMethod: el('kContactMethod').value,
       source: el('kSource').value.trim(), sourceAgency: el('kSourceAgency').value.trim(),
-      commission: el('kCommission').value, paymentTerms: el('kPaymentTerms').value.trim(),
       proofLink: el('kProofLink').value.trim(), adCode: el('kAdCode').value.trim(),
       notes: el('kNotes').value.trim(),
       stage: existing ? existing.stage : 'sourced'
     });
     // Pricing on an existing record needs admin approval — team edits are held
-    // as a proposal, exactly like SKU/bundle/month prices already are.
+    // as a proposal, exactly like SKU/bundle/month prices already are. Commission
+    // and payment terms are agreed contractual terms just like rate/fee, so they
+    // go through the same gate rather than writing straight through.
     const pricingChanges = [];
     const gatePricing = (field, next, label) => {
       const from = (existing && existing[field]) || '';
@@ -444,6 +447,8 @@ function kolForm(idx, pre){
       }
       return next;
     };
+    rec.commission = gatePricing('commission', el('kCommission').value, (existing?existing.handle:h) + ' — commission');
+    rec.paymentTerms = gatePricing('paymentTerms', el('kPaymentTerms').value.trim(), (existing?existing.handle:h) + ' — payment terms');
     if((picked?picked.value:type) === 'ugc'){
       rec.er = el('kEr').value.trim(); rec.posts = el('kPosts').value.trim();
       rec.rate = gatePricing('rate', el('kRate').value.trim(), (existing?existing.handle:h) + ' — rate per post');

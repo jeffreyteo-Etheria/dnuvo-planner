@@ -12,20 +12,24 @@ const json = (body, status) => new Response(JSON.stringify(body), {
 export default async (req) => {
   const store = getStore('dnuvo-planner');
 
+  // Both directions need the workspace key — the stored blob holds
+  // everything the app's client-side role gate hides from the team role
+  // (SKU cost, KOL fees), so an unauthenticated GET would leak it straight
+  // past that boundary regardless of who's looking at the app itself.
+  const key = process.env.WORKSPACE_KEY;
+  if (!key) {
+    return json({ error: 'WORKSPACE_KEY is not set on this site yet — add it in Netlify site settings before using Live sync.' }, 500);
+  }
+  if (req.headers.get('x-workspace-key') !== key) {
+    return json({ error: 'Wrong workspace key.' }, 401);
+  }
+
   if (req.method === 'GET') {
     const data = await store.get('state', { type: 'json' });
     return json(data || {});
   }
 
   if (req.method === 'POST') {
-    const key = process.env.WORKSPACE_KEY;
-    if (!key) {
-      return json({ error: 'WORKSPACE_KEY is not set on this site yet — add it in Netlify site settings before using Live sync.' }, 500);
-    }
-    if (req.headers.get('x-workspace-key') !== key) {
-      return json({ error: 'Wrong workspace key.' }, 401);
-    }
-
     let body;
     try { body = await req.json(); }
     catch (e) { return json({ error: 'Invalid JSON body.' }, 400); }

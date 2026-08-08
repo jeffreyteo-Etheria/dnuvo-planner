@@ -321,7 +321,7 @@ const ROLE_QUICKSTART = [
   },
   {
     role:'Content creative manager',
-    jump:'strategy',
+    jump:'content',
     focus:'Message system and channel adaptation',
     guide:[
       'Map each content batch to one KPI',

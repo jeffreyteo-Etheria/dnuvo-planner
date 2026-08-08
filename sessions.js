@@ -280,12 +280,55 @@ function sectionRows(sec){
       return [head, ...rows];
     }
     case 'kol': {
-      const head = ['Handle','Name','Platform','Tier','Followers','Engagement %','Posts','GMV','Audience','Contact','Stage','Source','Notes'];
+      // Fee/rate/commission are real committed spend — kept out of team
+      // exports the same way SKU cost is, even though the live roster view
+      // (a KOL manager needs these to actually negotiate) shows them unmasked.
+      const head = ['Handle','Name','Platform','Tier','Followers','Engagement %','Posts','GMV','Audience','Contact','Stage','Source','Notes']
+        .concat(admin ? ['Rate','Fee','Commission','Payment terms'] : []);
       const rows = S.kols.map(k => [k.handle,k.name,k.platform,k.tier,
         k.followers||'NOT VERIFIED', k.er||'NOT VERIFIED', k.posts||'NOT VERIFIED',
         k.gmv||'NOT VERIFIED', k.audience||'NOT VERIFIED', k.contact||'NOT VERIFIED',
-        (KOL_STAGES.find(s=>s.k===k.stage)||{}).name||k.stage, k.source||'', k.notes||'']);
+        (KOL_PIPE.find(s=>s.k===k.stage)||{}).name||k.stage, k.source||'', k.notes||'']
+        .concat(admin ? [k.rate?c+k.rate:'', k.fee?c+k.fee:'', k.commission||'', k.paymentTerms||''] : []));
       return [head, ...rows];
+    }
+    case 'kolschedule': {
+      const head = ['Date','Time','Creator','Type','Deliverable','Owner','Notes','Proof link','Status','Payment status']
+        .concat(admin ? ['Fee'] : []);
+      const rows = (S.schedule||[]).slice().sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(e => {
+        const status = e.done ? 'Done' : (e.date < stamp() ? 'Overdue' : 'Booked');
+        return [e.date, e.time||'', e.kol, e.type, e.what, e.owner||'', e.note||'', e.proofLink||'', status, e.paidStatus||'unpaid']
+          .concat(admin ? [e.feeAgreed?c+e.feeAgreed:''] : []);
+      });
+      return [head, ...rows];
+    }
+    case 'brandpulse': {
+      const audit = S.siteAudit || SITE_AUDIT_TEMPLATE;
+      const chNames = { shopee:'Shopee', tiktok:'TikTok', shopify:'Shopify' };
+      const auditRows = Object.keys(SITE_AUDIT_TEMPLATE).map(k => {
+        const a = audit[k] || SITE_AUDIT_TEMPLATE[k];
+        return [chNames[k]||k, a.score, a.issue||'', a.recommendation||''];
+      });
+      const fit = S.personaFit || { awareness:3, conversion:3, retention:3 };
+      const fitScore = p => {
+        const ch = p.channels || [];
+        const coverage = ch.filter(x => /Shopee|TikTok|Shopify|Lazada|Retail|Instagram/i.test(x)).length;
+        return Math.max(1, Math.min(5, Math.round((fit.awareness+fit.conversion+fit.retention+coverage)/4)));
+      };
+      const head = ['Section','Item','Score /5','Detail'];
+      const rows = [
+        ...auditRows.map(r => ['Site audit', r[0], r[1], [r[2],r[3]].filter(Boolean).join(' — ')]),
+        ...BUYER_PERSONAS.map(p => ['Buyer persona', p.name, fitScore(p), p.pain])
+      ];
+      return [head, ...rows];
+    }
+    case 'sendlog': {
+      return [['Date','Creator','Message','Sent via'],
+        ...(S.sendLog||[]).map(s=>[new Date(s.at).toLocaleString(), s.kol, s.msg, s.via])];
+    }
+    case 'shoplinks': {
+      return [['Product','Handle','URL','Link status'],
+        ...S.skus.map(s=>[s.name, s.handle||'', s.url||'', s.urlOk===true?'OK':s.urlOk===false?'Broken':'Not checked'])];
     }
     case 'compintel': {
       const src = (S.compIntel && S.compIntel.length) ? S.compIntel : COMPETITOR_INTEL;
@@ -341,9 +384,11 @@ function sectionRows(sec){
 const SECTION_LABELS = {
   strategy:'Strategy and phases', pricing:'Price book', bundles:'Bundles',
   media:'Media budget', alloc:'Allocation by product', kol:'Creator roster',
-  compintel:'Competitor intelligence',
+  kolschedule:'Creator schedule and deliverables',
+  compintel:'Competitor intelligence', brandpulse:'Brand pulse — site audit and personas',
   calendar:'Six-month calendar', events:'Activities', weeks:'First eight weeks',
-  report:'Reporting actuals', gates:'Launch gates', approvals:'Change requests'
+  report:'Reporting actuals', gates:'Launch gates', approvals:'Requests and flags',
+  sendlog:'Creator outreach log', shoplinks:'Shop link status'
 };
 
 function exportSection(sec, fmt){

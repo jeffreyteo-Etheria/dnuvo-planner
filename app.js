@@ -37,6 +37,7 @@ function normalizeState(obj){
   s.bundleOverrides = s.bundleOverrides || {};
   s.schedule = s.schedule || [];
   s.sendLog  = s.sendLog  || [];
+  s.eventStatus = s.eventStatus || {};
   return s;
 }
 function load(){
@@ -145,7 +146,7 @@ const VIEW_META = {
   media    :['Media plan','Budget, and every dollar named to a product.'],
   kol      :['KOL hub','Source, verify, brief and manage creators.'],
   events   :['Events','Activations, pop-ups and live sessions.'],
-  calendar :['Calendar','Six months, and the first eight weeks in detail.'],
+  calendar :['6-month calendar','Six months, and the first eight weeks in detail. For real creator booking dates, see KOL hub → Post → Calendar.'],
   pending  :['Pending changes','Proposed by the team. Nothing is applied until you decide.'],
   approvals:['Approvals','Change requests waiting on you.'],
   report   :['Reporting','Actuals against plan.'],
@@ -265,7 +266,7 @@ function renderOverview(){
       <span class="hb-v">${cur(tot[k])}</span></div>`).join('') + `</div>`;
 
   const ph = PHASES.find(p => {
-    if(p.n===1) return (S.gates.reviews||0) < 50;
+    if(p.n===1) return (S.gates.reviews||0) < 50 || (S.gates.rating||0) < 4.7;
     if(p.n===2) return (S.gates.roas||0) < 1.5;
     return true;
   }) || PHASES[0];
@@ -276,20 +277,31 @@ function renderOverview(){
     <div style="padding:11px 14px;background:var(--violet-lt);border-radius:6px;font-size:12.5px;color:var(--violet)">
       <b>Opens the next phase:</b> ${esc(ph.gate)}</div>`;
 
-  const items = [];
+  // Gate-lock items are capped and summarized rather than filling every slot,
+  // so rarer but more actionable signals (pending requests, campaign setup
+  // never configured, no creators yet) can't get silently crowded out.
+  const gateItems = [];
   GATES.forEach(g => {
     const c = S.gates[g.id]||0;
-    if(c < g.target) items.push([g.unlocks + ' is locked',
+    if(c < g.target) gateItems.push([g.unlocks + ' is locked',
       `${g.label} at ${g.id==='rating'?c.toFixed(1):Math.round(c)} of ${g.target} ${g.unit}.`, 'p-a']);
   });
-  if(isAdmin() && S.requests.filter(r=>r.status==='pending').length)
-    items.unshift(['Change requests waiting',
-      `${S.requests.filter(r=>r.status==='pending').length} request(s) from the team need a decision.`, 'p-v']);
+  const items = gateItems.slice(0, 3);
+  if(gateItems.length > 3) items.push([`${gateItems.length - 3} more gate(s) locked`,
+    'See the launch gates rail above for the full list.', 'p-a']);
   if(!S.kols.length) items.push(['No creators yet',
     'The review gate cannot move until creators are sourced and shipped.', 'p-r']);
+  const pendingReq = S.requests.filter(r=>r.status==='pending').length;
+  if(isAdmin() && pendingReq)
+    items.unshift(['Requests waiting', `${pendingReq} request(s)/flag(s) from the team need a decision.`, 'p-v']);
+  // Every settings field ships with a working d.nuvo default, so there's no
+  // reliable "never configured" signal to detect — this is an always-visible
+  // pointer for admins, not a conditional first-run check.
+  if(isAdmin()) items.push(['Check Campaign setup is still accurate',
+    'Media split, Brand pulse and Pricing shop links all read from Strategy → Campaign setup — worth a look before this launch.', 'p-n']);
 
   el('attention').innerHTML = items.length
-    ? items.slice(0,5).map(([t,b,p]) => `<div style="display:flex;gap:11px;padding:9px 0;border-bottom:1px solid var(--line-2)">
+    ? items.map(([t,b,p]) => `<div style="display:flex;gap:11px;padding:9px 0;border-bottom:1px solid var(--line-2)">
         <span class="pill ${p}" style="flex-shrink:0;margin-top:2px">!</span>
         <div><b style="font-size:13px">${esc(t)}</b>
         <div style="font-size:12.5px;color:var(--mute);margin-top:2px">${esc(b)}</div></div></div>`).join('')
@@ -326,6 +338,7 @@ function renderCampaignSetup(){
       <label>Location focus<input data-cs="market" value="${esc(S.settings.market)}"></label>
       <label>Shopee handle<input data-csh="shopee" value="${esc(S.settings.socialHandles.shopee||'')}"></label>
       <label>TikTok handle<input data-csh="tiktok" value="${esc(S.settings.socialHandles.tiktok||'')}"></label>
+      <label>M1 start month<input data-cs="startMonth" value="${esc(S.settings.startMonth)}" placeholder="e.g. July 2026"></label>
     </div>
 
     <div class="mf" style="margin-top:13px">
@@ -368,7 +381,7 @@ function renderCampaignSetup(){
   const compUrls = el('csCompUrls');
   if(compUrls) compUrls.addEventListener('change', () => {
     S.settings.competitorUrls = compUrls.value.split('\n').map(s=>s.trim()).filter(Boolean);
-    save();
+    save(); renderAll();
   });
   qsa('[data-csp]', box).forEach(c => c.addEventListener('change', () => {
     S.settings.platformsActive[c.dataset.csp] = c.checked; save(); renderCampaignSetup();
@@ -502,18 +515,20 @@ function renderBrandPulse(){
       return Math.max(1, Math.min(5, score));
     };
 
+    const fitDisabled = isAdmin() ? '' : ' disabled';
     personas.innerHTML = `
       <div class="pf-ctl">
+        ${isAdmin() ? '' : `<p class="fh" style="grid-column:1/-1">Set by an administrator — these three sliders tune the fit score for every persona below.</p>`}
         <label>Brand awareness strength
-          <input type="range" id="pfAw" min="1" max="5" value="${fit.awareness}">
+          <input type="range" id="pfAw" min="1" max="5" value="${fit.awareness}"${fitDisabled}>
           <span id="pfAwV">${fit.awareness}/5</span>
         </label>
         <label>Conversion readiness
-          <input type="range" id="pfCv" min="1" max="5" value="${fit.conversion}">
+          <input type="range" id="pfCv" min="1" max="5" value="${fit.conversion}"${fitDisabled}>
           <span id="pfCvV">${fit.conversion}/5</span>
         </label>
         <label>Retention strength
-          <input type="range" id="pfRt" min="1" max="5" value="${fit.retention}">
+          <input type="range" id="pfRt" min="1" max="5" value="${fit.retention}"${fitDisabled}>
           <span id="pfRtV">${fit.retention}/5</span>
         </label>
       </div>
@@ -598,6 +613,14 @@ function renderBrandPulse(){
    6 closest competitors. Sole owner of S.compIntel; KOL hub links here
    rather than duplicating this panel. */
 function renderCompPulse(){
+  const links = el('bpCompLinks');
+  if(links){
+    const urls = S.settings.competitorUrls || [];
+    links.innerHTML = urls.length
+      ? `<p class="fh" style="margin-bottom:8px">Competitor links from Strategy → Campaign setup:
+          ${urls.map(u => `<a class="src-ln" href="${/^https?:\/\//.test(u)?esc(u):'https://'+esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`).join(' · ')}</p>`
+      : '';
+  }
   const box = el('bpWatch'); if(!box) return;
   const compRows = (S.compIntel && S.compIntel.length) ? S.compIntel : COMPETITOR_INTEL;
   const priceTag = (row, key) => {
@@ -965,11 +988,18 @@ function renderSim(){
     el('simOut').innerHTML = rows.map(([l,v,c]) =>
       `<div class="so-row ${c}"><span>${l}</span><b>${v}</b></div>`).join('') +
       (!ok && !isAdmin() ? `<div style="padding:11px 15px;border-top:1px solid var(--line)">
-        <button class="btn-line sm" id="simReq">Request approval for this price</button></div>` : '');
+        <button class="btn-line sm" id="simReq">Propose this as the new sale price</button></div>` : '');
     const rb = el('simReq');
-    if(rb) rb.addEventListener('click', () =>
-      openRequest('Promotional price', s.name, cur(s.sale), cur(net),
-        `Discount of ${pct}% breaks the floor price by ${cur(fl-net)}.`));
+    if(rb) rb.addEventListener('click', () => {
+      // This is a real sale-price change on a real SKU field, so it goes
+      // through the same structured proposal system as editing the price
+      // book directly — not the free-text request system, which never
+      // actually applies anything on approval.
+      const applied = propose('sku', s.id, 'sale', String(s.sale), String(Math.round(net*100)/100),
+        `${s.name} — ${pct}% discount breaks the floor by ${cur(fl-net)}`);
+      if(applied){ toast('Sent for approval — see Pending changes'); renderSim(); }
+      else toast('That is already the current sale price');
+    });
   };
   ['simSku','simCh','simPct'].forEach(id => {
     el(id).addEventListener('input', upd); el(id).addEventListener('change', upd);
@@ -1489,11 +1519,31 @@ function renderEvents(){
       </tr>`).join('') + `</tbody>`;
   }
 
+  S.eventStatus = S.eventStatus || {};
+  const evStatusOpts = ['Not started','Planned','Done'];
   el('eventTable').innerHTML = `<thead><tr><th>Activity</th><th>When</th><th class="n">Budget</th>
-      <th>Purpose</th><th>How it runs</th><th>Owner</th></tr></thead><tbody>` +
-    EVENTS.map(e => `<tr><td><b>${esc(e.name)}</b></td><td class="n">${esc(e.when)}</td>
+      <th>Purpose</th><th>How it runs</th><th>Owner</th><th>Status</th><th>Actual date</th></tr></thead><tbody>` +
+    EVENTS.map((e,i) => {
+      const st = S.eventStatus[i] || {};
+      return `<tr><td><b>${esc(e.name)}</b></td><td class="n">${esc(e.when)}</td>
       <td class="n">${esc(e.budget)}</td><td>${esc(e.goal)}</td>
-      <td style="max-width:340px">${esc(e.how)}</td><td>${esc(e.owner)}</td></tr>`).join('') + `</tbody>`;
+      <td style="max-width:340px">${esc(e.how)}</td><td>${esc(e.owner)}</td>
+      <td><select class="ev-status" data-evi="${i}">${evStatusOpts.map(o=>
+        `<option${(st.status||'Not started')===o?' selected':''}>${o}</option>`).join('')}</select></td>
+      <td><input type="date" class="ev-date" data-evi="${i}" value="${esc(st.date||'')}"></td></tr>`;
+    }).join('') + `</tbody>`;
+  qsa('.ev-status').forEach(s => s.addEventListener('change', () => {
+    const i = s.dataset.evi;
+    S.eventStatus[i] = S.eventStatus[i] || {};
+    S.eventStatus[i].status = s.value;
+    save();
+  }));
+  qsa('.ev-date').forEach(d => d.addEventListener('change', () => {
+    const i = d.dataset.evi;
+    S.eventStatus[i] = S.eventStatus[i] || {};
+    S.eventStatus[i].date = d.value;
+    save();
+  }));
 }
 
 function renderCalendar(){
@@ -1627,24 +1677,36 @@ function renderReport(){
   const B = computeBudget();
   el('scoreTable').innerHTML = `<thead><tr><th>Month</th><th class="n">Units plan</th><th class="n">Units actual</th>
       <th class="n">Revenue plan</th><th class="n">Revenue actual</th><th class="n">Return</th>
-      <th class="n">Reviews</th><th class="n">Rating</th></tr></thead><tbody>` +
+      <th class="n">Reviews</th><th class="n">Rating</th><th class="n">Audience pool</th><th class="n">Buyers</th></tr></thead><tbody>` +
     B.map(b => {
       const a = S.actuals[b.k] || {};
       const f = k => `<span class="ed" contenteditable="true" data-act="${b.k}" data-f="${k}">${esc(a[k]||'')}</span>`;
       return `<tr><td><b>${b.label}</b></td><td class="n">${b.units}</td><td class="n">${f('units')}</td>
         <td class="n">${cur(b.rev)}</td><td class="n">${f('rev')}</td>
-        <td class="n">${f('roas')}</td><td class="n">${f('reviews')}</td><td class="n">${f('rating')}</td></tr>`;
+        <td class="n">${f('roas')}</td><td class="n">${f('reviews')}</td><td class="n">${f('rating')}</td>
+        <td class="n">${f('pool')}</td><td class="n">${f('buyers')}</td></tr>`;
     }).join('') + `</tbody>`;
   qsa('[data-act]').forEach(c => c.addEventListener('blur', () => {
-    const k = c.dataset.act;
+    const k = c.dataset.act, field = c.dataset.f;
+    const raw = c.textContent.trim();
+    // A gate-driving field that doesn't parse as a number would silently zero
+    // that gate out — reject it instead of saving garbage.
+    const gateFields = ['reviews','rating','roas','pool','buyers'];
+    if(raw && gateFields.includes(field) && num(raw) === 0 && raw !== '0'){
+      toast(`"${raw}" doesn't look like a number — ${field} actual was not saved`);
+      c.textContent = (S.actuals[k]||{})[field] || '';
+      return;
+    }
     S.actuals[k] = S.actuals[k] || {};
-    S.actuals[k][c.dataset.f] = c.textContent.trim();
+    S.actuals[k][field] = raw;
     // latest actuals feed the gate rail
-    const last = Object.values(S.actuals).filter(a=>a.reviews||a.rating||a.roas).pop();
+    const last = Object.values(S.actuals).filter(a=>a.reviews||a.rating||a.roas||a.pool||a.buyers).pop();
     if(last){
       if(last.reviews) S.gates.reviews = num(last.reviews);
       if(last.rating)  S.gates.rating  = num(last.rating);
       if(last.roas)    S.gates.roas    = num(last.roas);
+      if(last.pool)    S.gates.pool    = num(last.pool);
+      if(last.buyers)  S.gates.buyers  = num(last.buyers);
     }
     save(); renderRail(); renderOverview();
   }));
