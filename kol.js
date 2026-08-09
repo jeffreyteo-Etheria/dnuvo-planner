@@ -12,15 +12,6 @@ let kolStage = 'creators';
 let schedView = 'table';
 let schedCalMonth = null;
 let schedCalFilters = { kol:'', type:'', status:'' };
-let kolWarmthFilter = 'priority';
-const KOL_WARMTH_FILTERS = [
-  { k:'priority',  name:'Priority — Warm, Confirmed & Completed' },
-  { k:'confirmed', name:'Confirmed only' },
-  { k:'completed', name:'Completed only' },
-  { k:'warm',      name:'Warm only' },
-  { k:'cold',      name:'Cold only' },
-  { k:'all',       name:'All, including Declined' }
-];
 const SCHED_BOARD_TONE = { planned:'p-n', confirmed:'p-v', live:'p-a', done:'p-g' };
 function schedBoardOf(e){ return e.board || (e.done ? 'done' : 'planned'); }
 /* Cold = never contacted. Warm = in conversation. Confirmed = terms locked
@@ -196,31 +187,24 @@ function renderKolPipe(){
   }));
 }
 
+/* No dropdown — the default view is fixed to Confirmed + Completed only
+   (terms locked, or delivered). Clicking a stage tile above explicitly
+   overrides this to show exactly that stage, including cold/warm ones —
+   the tiles are the only way to reach them, by design. */
 function renderWarmthFilter(){
   const box = el('warmthFilterBox'); if(!box) return;
-  const list = S.kols.filter(k => (k.type||'ugc') === kolTab);
-  const counts = { priority:0, confirmed:0, completed:0, warm:0, cold:0, all:list.length };
-  list.forEach(k => {
-    const w = warmthOf(k);
-    if(w !== 'declined' && w !== 'cold') counts.priority++;
-    if(counts[w] != null) counts[w]++;
-  });
-  box.innerHTML = `<label>Show
-    <select id="warmthSel">${KOL_WARMTH_FILTERS.map(f =>
-      `<option value="${f.k}"${kolWarmthFilter===f.k?' selected':''}>${esc(f.name)} (${counts[f.k]||0})</option>`).join('')}</select></label>`;
-  el('warmthSel').addEventListener('change', e => { kolWarmthFilter = e.target.value; renderKolTable(); });
+  box.innerHTML = `<p class="fh">Showing confirmed and completed creators only.
+    Click a stage above to see Sourced, Contacted or Negotiating.</p>`;
 }
 
 function renderKolTable(){
   const active = qsa('.pipe-s.on').map(b => b.dataset.stage);
   let list = S.kols.filter(k => (k.type||'ugc') === kolTab);
-  list = list.filter(k => {
-    if(kolWarmthFilter === 'all') return true;
-    const w = warmthOf(k);
-    if(kolWarmthFilter === 'priority') return w !== 'cold' && w !== 'declined';
-    return w === kolWarmthFilter;
-  });
-  if(active.length) list = list.filter(k => active.includes(k.stage));
+  if(active.length){
+    list = list.filter(k => active.includes(k.stage));
+  } else {
+    list = list.filter(k => { const w = warmthOf(k); return w === 'confirmed' || w === 'completed'; });
+  }
 
   el('kolEmpty').hidden = list.length > 0;
   if(!list.length){

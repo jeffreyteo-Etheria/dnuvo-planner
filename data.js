@@ -9,10 +9,10 @@ const DEFAULTS = {
   market: 'Singapore',
   cur: 'S$',
   goalUnits: 3000,
-  baseBudget: 2500,
+  baseBudget: 10000,
   marginPct: 40,
   reinvestPct: 30,
-  startMonth: 'July 2026',
+  startMonth: 'August 2026',
   shopDomain: 'https://shop.dnuvo.com.sg',
   shopPath: '/products/',      // Shopify default. Change if the store uses another pattern.
   aiToolLinks: { higgsfield:'https://higgsfield.ai', maxfusion:'', gemini:'https://gemini.google.com' },
@@ -180,6 +180,33 @@ const RULES = [
   { t:'Never below the floor', b:'Floor equals cost times 2.5 plus platform commission plus payment fee. Every promo is checked against it first.' }
 ];
 
+/* ── MY/TH expansion research — findings from real market/regulatory
+   research (sourced, not assumed), not a decided plan. Distributor
+   candidates start empty in state; nothing here invents a real company
+   or contact. ── */
+const EXPANSION_MARKETS = [
+  { k:'malaysia', name:'Malaysia',
+    stat:'~6.5% CAGR growth. High-end cosmetic imports exceeded USD 343M in 2024 — positioned as a premium-import hub, not a discount market.',
+    fit:'Premium/import-hub positioning matches d.nuvo\'s pricing tier directly — no discounting needed to enter.',
+    source:'ASEAN Cosmeceuticals Market Size — Fortune Business Insights' },
+  { k:'thailand', name:'Thailand',
+    stat:'Skincare specifically growing ~9%/year over the past 5 years, now valued at ~109.91B baht. Market is shifting toward "science-based, skin-health-focused" products.',
+    fit:'That positioning shift is a direct match for d.nuvo\'s ceramide/barrier-repair claims — the story doesn\'t need to change for this market.',
+    source:'T-Beauty\'s $9 Billion Test — Nation Thailand' }
+];
+const EXPANSION_CHECKLIST = {
+  malaysia: [
+    { k:'cnh', label:'CNH (Cosmetic Notification Holder) secured', why:'Legally required — d.nuvo isn\'t a Malaysian-registered company, so a local agent must hold this role before any product is notified.' },
+    { k:'npra', label:'NPRA cosmetic notification submitted', why:'Required under CDCR 1984 before any sale, import, or possession in Malaysia. Selling unnotified stock risks seizure and platform bans.' },
+    { k:'halal', label:'Halal certification evaluated (optional)', why:'Not legally required for skincare, but worth a deliberate yes/no rather than a default — relevant to reach in this market.' }
+  ],
+  thailand: [
+    { k:'entity', label:'Local entity or agent secured', why:'Same structural requirement as Malaysia\'s CNH — a foreign brand needs a local party to notify through.' },
+    { k:'fda', label:'Thai FDA cosmetic notification submitted', why:'Required under the ASEAN Cosmetic Directive before legal sale.' },
+    { k:'labeling', label:'Thai-language labeling prepared', why:'Standard requirement for retail sale — confirm exact wording rules with the local agent once secured.' }
+  ]
+};
+
 /* ── Channel briefs ── */
 const CHAN_BRIEFS = [
   { id:'tiktok', name:'TikTok Shop Ads', pill:'p-a', role:'Discovery', owner:'Ops builds · Admin approves',
@@ -219,31 +246,38 @@ const CHAN_BRIEFS = [
 ];
 
 /* ── Monthly plan ── */
+/* Re-anchored to a 15 Aug 2026 start (was Jul), against the real SG retail
+   calendar (9.9/10.10/11.11/12.12 dates + CNY 2027 confirmed 6-8 Feb) —
+   not assumed placeholder dates. 11.11 sits inside M3's window, which is
+   why the Mega KOL push and the unit peak both land there, not M5 as in
+   the old Jul-start table. Units ramp 300→750→taper to 400, summing to
+   the same 3,000-unit goal, shaped around the $10K flat M1-M3 budget
+   (see computeBudget) tapering once M4-M6 budget becomes revenue-funded. */
 const MONTHS = [
-  { k:'M1', label:'M1 Jul', units:200, price:24,
+  { k:'M1', label:'M1 · 15 Aug–14 Sep', units:300, price:24,
     split:{ tiktok:0,    shopee:0,    google:0,    meta:0,    kol:1.00 },
-    media:'Setup only — pixels, listings, bundles', kolWork:'Gift 20 nano creators',
-    events:'Creator content day', promo:'Always-on voucher and welcome code live' },
-  { k:'M2', label:'M2 Aug', units:300, price:24,
+    media:'Setup — pixels, listings, bundles live before 9.9', kolWork:'Gift 20 nano creators, first UGC batch live',
+    events:'Creator content day', promo:'9.9 Super Shopping Day (Sep 9) — first mega-sale push' },
+  { k:'M2', label:'M2 · 15 Sep–14 Oct', units:450, price:24,
     split:{ tiktok:0.26, shopee:0.26, google:0,    meta:0,    kol:0.48 },
-    media:'TikTok and Shopee ads open', kolWork:'One paid micro post',
-    events:'Apply for the 9.9 slot', promo:'8.8 sale · first flash deal if the rating gate clears' },
-  { k:'M3', label:'M3 Sep', units:450, price:24,
-    split:{ tiktok:0.32, shopee:0.27, google:0.15, meta:0,    kol:0.26 },
-    media:'Google Shopping added', kolWork:'Two micro plus one macro',
-    events:'Apply for 11.11', promo:'9.9 mega sale — full voucher stack' },
-  { k:'M4', label:'M4 Oct', units:550, price:24,
+    media:'TikTok and Shopee ads open', kolWork:'One paid micro post, first livestream test',
+    events:'Apply for 11.11 marketplace slot', promo:'10.10 Brand Day — bundle push' },
+  { k:'M3', label:'M3 · 15 Oct–14 Nov', units:750, price:24,
+    split:{ tiktok:0.31, shopee:0.27, google:0.15, meta:0,    kol:0.27 },
+    media:'Full budget on proven channels ahead of 11.11', kolWork:'3 Mega KOL livestreams ($900 each) targeting 11.11',
+    events:'Market pop-up with live co-host', promo:'11.11 Singles Day — deepest single-day discount of the year' },
+  { k:'M4', label:'M4 · 15 Nov–14 Dec', units:600, price:24,
     split:{ tiktok:0.31, shopee:0.25, google:0.17, meta:0.06, kol:0.21 },
-    media:'Meta retargeting opens', kolWork:'Two micro posts',
-    events:'Pharmacy sampling begins', promo:'S$10 off S$70 · replenishment email' },
-  { k:'M5', label:'M5 Nov', units:700, price:24,
+    media:'Scale 11.11 winners, cut underperformers', kolWork:'One macro post, retarget 11.11 buyers',
+    events:'Pharmacy sampling begins', promo:'12.12 Year-End Sale' },
+  { k:'M5', label:'M5 · 15 Dec–14 Jan', units:500, price:24,
     split:{ tiktok:0.30, shopee:0.25, google:0.15, meta:0.14, kol:0.16 },
-    media:'Maximum budget on proven channels', kolWork:'One macro · live twice weekly',
-    events:'Market pop-up with live co-host', promo:'11.11 mega sale — the largest month' },
-  { k:'M6', label:'M6 Dec', units:800, price:24,
+    media:'Clearance push, replenishment email to existing buyers', kolWork:'One micro post',
+    events:'Beauty fair booth', promo:'New Year clearance, repeat-buyer focus' },
+  { k:'M6', label:'M6 · 15 Jan–14 Feb', units:400, price:24,
     split:{ tiktok:0.29, shopee:0.26, google:0.14, meta:0.17, kol:0.14 },
-    media:'Scale winners, cut the rest', kolWork:'One macro at the fair',
-    events:'Beauty fair booth', promo:'12.12 · festive sets · clearance' }
+    media:'CNY gifting push — leaner budget, lean on repeat/organic', kolWork:'CNY gift-set content with proven top creators',
+    events:'CNY gifting campaign', promo:'CNY 2027 (6–8 Feb, confirmed) — gift-set bundles' }
 ];
 
 /* ── Per-SKU allocation weights within each channel ──

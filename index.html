@@ -100,6 +100,7 @@
       <button class="nav-i"      data-view="brandpulse" data-acl="all">Brand pulse</button>
       <button class="nav-i"      data-view="pricing"  data-acl="all">Pricing</button>
       <button class="nav-i"      data-view="media"    data-acl="all">Media plan</button>
+      <button class="nav-i"      data-view="expansion" data-acl="all">MY/TH expansion</button>
 
       <div class="nav-group">Execute</div>
       <button class="nav-i"      data-view="kol"      data-acl="all">KOL hub</button>
@@ -235,6 +236,29 @@
       </div>
 
       <div class="panel">
+        <div class="p-h"><h3>Analyze a competitor</h3>
+          <span class="p-note">no in-app AI call — builds a prompt for your own AI tool, then adds the result to the tracker above</span></div>
+        <div class="research">
+          <div class="res-row">
+            <input id="caName" placeholder="Competitor name">
+            <input id="caUrl" placeholder="https://... their store, Shopee/TikTok page, or site" style="flex:2">
+            <button class="btn-solid" id="caBuildPrompt">Build prompt</button>
+          </div>
+          <div class="prompt-out" id="caPromptOut" hidden>
+            <div class="po-h"><span>Paste this into ChatGPT, Gemini or your tool of choice</span>
+              <button class="btn-line sm" id="caCopyPrompt">Copy</button></div>
+            <pre id="caPromptText"></pre>
+          </div>
+          <div class="mf" style="margin-top:14px">
+            <label>Paste the AI's CSV result here</label>
+            <textarea id="caResultText" rows="6" placeholder="competitor,product,product_type,channel,currency,list_price,promo_price,observed_at,key_message,source"></textarea>
+            <p class="fh">Adds to the tracker above — existing rows for other competitors are kept, not replaced. A row for the same competitor + product overwrites just that row.</p>
+          </div>
+          <button class="btn-line sm" id="caAddToTracker">Add to tracker</button>
+        </div>
+      </div>
+
+      <div class="panel">
         <div class="p-h"><h3>Competitor takeaways</h3><span class="p-note">what each competitor's pattern means for this month's plan</span></div>
         <div id="compTakeaways"></div>
       </div>
@@ -314,7 +338,7 @@
       <div class="panel">
         <div class="p-h">
           <h3>Budget engine</h3>
-          <span class="p-note">base + reinvested profit</span>
+          <span class="p-note">flat M1–M3, then 30% of prior month's revenue</span>
         </div>
         <div class="tb-wrap"><table class="tb" id="budgetTable"></table></div>
         <div class="hint-bar" id="goalCheck"></div>
@@ -346,6 +370,32 @@
         <div class="p-h"><h3>Channel briefs</h3><span class="p-note">how each is run</span></div>
         <div id="chanBriefs"></div>
       </div>
+    </section>
+
+    <!-- ═══════ MY/TH EXPANSION ═══════ -->
+    <section class="view" data-view="expansion">
+
+      <div class="panel">
+        <div class="p-h"><h3>Why Malaysia and Thailand</h3><span class="p-note">researched, sourced — not a decided plan</span></div>
+        <div id="expMarkets"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Regulatory checklist</h3><span class="p-note">both markets require a local party before any sale — same structural requirement, different name</span></div>
+        <div id="expChecklist"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Distributor / CNH candidates</h3><span class="p-note">starts empty — nothing here is a real contact until your team adds one</span></div>
+        <div id="expDistributors"></div>
+        <button class="btn-line sm" id="expAddDist" style="margin-top:10px">Add candidate</button>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>SKU and bundle fit</h3><span class="p-note">starting recommendation — edit freely</span></div>
+        <div id="expSkuFit"></div>
+      </div>
+
     </section>
 
     <!-- ═══════ KOL HUB ═══════ -->

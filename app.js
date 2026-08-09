@@ -43,6 +43,13 @@ function normalizeState(obj){
   s.schedule = s.schedule || [];
   s.sendLog  = s.sendLog  || [];
   s.eventStatus = s.eventStatus || {};
+  s.expansion = s.expansion || {};
+  s.expansion.checklist = s.expansion.checklist || {};
+  s.expansion.distributors = s.expansion.distributors || [];
+  s.expansion.skuFit = s.expansion.skuFit || {
+    malaysia: 'Barrier-repair/ceramide story matches Malaysia\'s premium-import positioning. Lead with the Hero Repair Duo; consider a CNY gift-set bundle for the Chinese-Malaysian segment.',
+    thailand: 'Thailand skincare is trending toward "science-based, skin-health" positioning — direct match for d.nuvo\'s barrier-repair claims. Lead with the same hero SKU; no repositioning needed.'
+  };
   return s;
 }
 function load(){
@@ -167,11 +174,13 @@ const VIEW_META = {
   brandpulse:['Brand pulse','Competitor intelligence, personas, and site audit alignment.'],
   pricing  :['Pricing','Tiered architecture across three platforms.'],
   media    :['Media plan','Budget, and every dollar named to a product.'],
+  expansion:['MY/TH expansion','Regulatory path, distributor candidates and market fit for Malaysia and Thailand.'],
   kol      :['KOL hub','Source, verify, brief and manage creators.'],
+  content  :['Content','Brand-persona AI prompts for ad hooks and creative.'],
   events   :['Events','Activations, pop-ups and live sessions.'],
   calendar :['6-month calendar','Six months, and the first eight weeks in detail. For real creator booking dates, see KOL hub → Post → Calendar.'],
   pending  :['Pending changes','Proposed by the team. Nothing is applied until you decide.'],
-  approvals:['Approvals','Change requests waiting on you.'],
+  approvals:['Requests & flags','General asks and issues from the team.'],
   report   :['Reporting','Actuals against plan.'],
   aistrategy:['AI strategy','Orchestrate modules and generate connected monthly actions.']
 };
@@ -208,16 +217,22 @@ function renderRail(){
 }
 
 /* ═══════════ BUDGET ENGINE ═══════════ */
+/* M1-M3: flat baseBudget each month — committed spend to build proof and
+   momentum into 11.11, independent of that month's own sales. M4-M6: 30%
+   of the PRIOR month's revenue — budget becomes self-funded once the
+   front-loaded push is done, rather than assuming continued cash input.
+   This is a deliberately different shape from a smooth reinvestment ramp:
+   a real step down at the M3→M4 boundary, not a curve. */
 function computeBudget(){
   const st = S.settings;
   const margin = st.marginPct/100, reinvest = st.reinvestPct/100;
-  let prev = 0;
+  let prevRev = 0;
   return S.months.map((m,i) => {
     const meta = MONTHS[i];
     const rev = m.units * m.price;
     const profit = rev * margin;
-    const budget = i === 0 ? st.baseBudget : st.baseBudget + prev * reinvest;
-    prev = profit;
+    const budget = i < 3 ? st.baseBudget : prevRev * reinvest;
+    prevRev = rev;
     const split = (S.splitOverrides && S.splitOverrides[m.k]) || meta.split;
     const ch = {};
     Object.keys(meta.split).forEach(k => ch[k] = budget * (split[k] ?? meta.split[k]));
@@ -436,8 +451,8 @@ function renderStrategy(){
     `<div class="rule"><b>${esc(r.t)}</b><p>${esc(r.b)}</p></div>`).join('');
 
   if(isAdmin()){
-    const f = [['goalUnits','Units goal'],['baseBudget','Base budget'],
-               ['marginPct','Margin %'],['reinvestPct','Reinvest %']];
+    const f = [['goalUnits','Units goal'],['baseBudget','Flat budget, M1–M3'],
+               ['marginPct','Margin %'],['reinvestPct','% of prior month revenue, M4–M6']];
     el('targetFields').innerHTML = f.map(([k,l]) =>
       `<label>${l}<input type="number" data-set="${k}" value="${S.settings[k]}"></label>`).join('');
     qsa('[data-set]').forEach(i => i.addEventListener('input', () => {
@@ -632,6 +647,38 @@ function renderBrandPulse(){
   }
 }
 
+/* Builds a copy-paste prompt for an external AI tool rather than calling
+   one directly — same pattern as the Content module's prompt builder, so
+   there's no new API key/cost/dependency added to a static site. The
+   output format asked for matches the competitor tracker's own CSV import
+   columns exactly, so the result pastes straight back in with zero new
+   parsing code — see caAddToTracker wiring in renderCompPulse. */
+function buildCompetitorAnalysisPrompt(name, url){
+  return `You are researching a direct competitor to ${S.settings.brand}, a ceramide/barrier-repair skincare brand in ${S.settings.market}.
+
+Competitor: ${name}
+URL to research: ${url}
+
+Visit the URL (and any official social/marketplace storefronts linked from it) and report ONLY what you can actually verify there. Leave a field blank rather than estimate — a guess presented as fact is worse than no data.
+
+For each distinct product or bundle you find that competes with ${S.settings.brand}, output ONE row in this exact CSV format (header row first, exactly as shown, no other columns):
+
+competitor,product,product_type,channel,currency,list_price,promo_price,observed_at,key_message,source
+
+- competitor: "${name}"
+- product: the product/bundle name as listed
+- product_type: e.g. "Ceramide / barrier", "Vitamin C", "Cleanser" — whatever actually applies
+- channel: where you found it (Shopee / TikTok Shop / Shopify / Lazada / Instagram / etc.)
+- currency: SGD unless the listing itself shows otherwise
+- list_price: the listed price, numbers only, blank if not visible
+- promo_price: current promo/sale price if any, blank if none
+- observed_at: today's date (YYYY-MM-DD)
+- key_message: the single strongest claim or hook they're using, in their own words — quote it, don't paraphrase it into something stronger than what they actually said
+- source: the exact URL where you found this
+
+Return only the CSV block — header row plus data rows, nothing else.`;
+}
+
 /* Competitor research — pricing, listing and content strategy for the
    6 closest competitors. Sole owner of S.compIntel; KOL hub links here
    rather than duplicating this panel. */
@@ -697,33 +744,70 @@ function renderCompPulse(){
     toast('Competitor tracker downloaded');
   });
 
-  const applyImportedRows = rowsIn => {
-    const normalized = rowsIn.filter(r => r.competitor && r.product).map(r => ({
-      competitor: r.competitor,
-      product: r.product,
-      productType: r.product_type || r.producttype || r.category || 'Ceramide / barrier',
-      channel: r.platform_channel || r.channel || 'Marketplace',
-      currency: (r.currency || 'SGD').toUpperCase(),
-      listPrice: r.list_price || r.listprice || '',
-      promoPrice: r.promo_price || r.promoprice || '',
-      observedAt: r.week_start || r.observed_at || new Date().toISOString().slice(0,10),
-      keyMessage: [r.key_message_1, r.key_message_2, r.key_message].filter(Boolean).join(' | '),
-      source: r.source_url || r.source || ''
-    }));
+  const normalizeCompRows = rowsIn => rowsIn.filter(r => r.competitor && r.product).map(r => ({
+    competitor: r.competitor,
+    product: r.product,
+    productType: r.product_type || r.producttype || r.category || 'Ceramide / barrier',
+    channel: r.platform_channel || r.channel || 'Marketplace',
+    currency: (r.currency || 'SGD').toUpperCase(),
+    listPrice: r.list_price || r.listprice || '',
+    promoPrice: r.promo_price || r.promoprice || '',
+    observedAt: r.week_start || r.observed_at || new Date().toISOString().slice(0,10),
+    keyMessage: [r.key_message_1, r.key_message_2, r.key_message].filter(Boolean).join(' | '),
+    source: r.source_url || r.source || ''
+  }));
+
+  // additive=true: adds/updates rows for the competitor(s) present, leaves
+  // every other competitor's existing rows untouched. Used by the single-
+  // competitor prompt-builder flow, where wiping the whole tracker for one
+  // new lookup would be a real loss of prior work.
+  const applyImportedRows = (rowsIn, additive) => {
+    const normalized = normalizeCompRows(rowsIn);
     if(!normalized.length){
       toast('No valid competitor rows found');
       return;
     }
-    S.compIntel = normalized;
+    if(additive){
+      S.compIntel = (S.compIntel && S.compIntel.length) ? S.compIntel : COMPETITOR_INTEL.map(r=>Object.assign({},r));
+      normalized.forEach(row => {
+        const idx = S.compIntel.findIndex(x => x.competitor === row.competitor && x.product === row.product);
+        if(idx >= 0) S.compIntel[idx] = row; else S.compIntel.push(row);
+      });
+    } else {
+      S.compIntel = normalized;
+    }
     save();
     renderCompPulse();
-    toast('Competitor CSV imported');
+    toast(additive ? normalized.length + ' row(s) added to the tracker' : 'Competitor CSV imported');
   };
 
   const handleCsvText = text => {
     const rowsIn = parseCsvObjects(text);
     applyImportedRows(rowsIn);
   };
+
+  const caUrlInput = el('caUrl'), caNameInput = el('caName');
+  const caBuildBtn = el('caBuildPrompt');
+  if(caBuildBtn) caBuildBtn.addEventListener('click', () => {
+    const name = caNameInput.value.trim(), url = caUrlInput.value.trim();
+    if(!name || !url){ toast('Enter a competitor name and URL first'); return; }
+    const prompt = buildCompetitorAnalysisPrompt(name, url);
+    el('caPromptText').textContent = prompt;
+    el('caPromptOut').hidden = false;
+  });
+  const caCopyBtn = el('caCopyPrompt');
+  if(caCopyBtn) caCopyBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(el('caPromptText').textContent)
+      .then(()=>toast('Prompt copied')).catch(()=>toast('Select the text and copy manually'));
+  });
+  const caAddBtn = el('caAddToTracker');
+  if(caAddBtn) caAddBtn.addEventListener('click', () => {
+    const text = el('caResultText').value;
+    if(!text.trim()){ toast('Paste the AI\'s CSV result first'); return; }
+    const rowsIn = parseCsvObjects(text);
+    applyImportedRows(rowsIn, true);
+    el('caResultText').value = '';
+  });
 
   el('impCompCsv').addEventListener('click', () => el('impCompFile').click());
   el('impCompFile').addEventListener('change', e => {
@@ -1144,6 +1228,90 @@ function renderSplitSuggestion(){
     save(); renderAll();
     toast('Applied — ' + meta.k + ' now uses the suggested split');
   });
+}
+
+/* ═══════════ MY/TH EXPANSION ═══════════
+   Research reference (EXPANSION_MARKETS/EXPANSION_CHECKLIST, data.js) is
+   static and sourced. Distributor candidates and SKU-fit notes are live
+   state — the candidates list starts empty on purpose; nothing here
+   invents a real company or contact. */
+function renderExpansion(){
+  const marketsBox = el('expMarkets');
+  if(marketsBox){
+    marketsBox.innerHTML = `<div class="promo-grid">${EXPANSION_MARKETS.map(m => `
+      <div class="promo-card">
+        <span>${esc(m.name)}</span><b>${esc(m.stat)}</b>
+        <p>${esc(m.fit)}</p>
+        <p style="font-size:11px;color:var(--faint);margin-top:6px">Source: ${esc(m.source)}</p>
+      </div>`).join('')}</div>`;
+  }
+
+  const checklistBox = el('expChecklist');
+  if(checklistBox){
+    checklistBox.innerHTML = Object.keys(EXPANSION_CHECKLIST).map(mk => {
+      const marketName = (EXPANSION_MARKETS.find(m=>m.k===mk)||{}).name || mk;
+      return `<div class="mf"><label style="text-transform:none;letter-spacing:0;font-size:13px;color:var(--ink)">${esc(marketName)}</label>
+        ${EXPANSION_CHECKLIST[mk].map(item => {
+          const id = mk + '_' + item.k;
+          const checked = !!S.expansion.checklist[id];
+          return `<label class="ck" title="${esc(item.why)}">
+            <input type="checkbox" data-expck="${id}"${checked?' checked':''}${isAdmin()?'':' disabled'}>
+            <span>${esc(item.label)}</span></label>`;
+        }).join('')}
+      </div>`;
+    }).join('');
+    qsa('[data-expck]').forEach(c => c.addEventListener('change', () => {
+      S.expansion.checklist[c.dataset.expck] = c.checked; save();
+    }));
+  }
+
+  const distBox = el('expDistributors');
+  if(distBox){
+    const rows = S.expansion.distributors;
+    distBox.innerHTML = rows.length
+      ? `<div class="tb-wrap"><table class="tb">
+          <thead><tr><th>Name</th><th>Market</th><th>Contact</th><th>Status</th><th>Notes</th><th></th></tr></thead>
+          <tbody>${rows.map((d,i) => `<tr>
+            <td><input class="audit-in" data-dist="${i}|name" value="${esc(d.name||'')}" placeholder="Company or agent name"${isAdmin()?'':' disabled'}></td>
+            <td><select class="audit-in" data-dist="${i}|market"${isAdmin()?'':' disabled'}>
+              ${EXPANSION_MARKETS.map(m=>`<option value="${m.k}"${d.market===m.k?' selected':''}>${esc(m.name)}</option>`).join('')}
+            </select></td>
+            <td><input class="audit-in" data-dist="${i}|contact" value="${esc(d.contact||'')}" placeholder="email or phone"${isAdmin()?'':' disabled'}></td>
+            <td><select class="audit-in" data-dist="${i}|status"${isAdmin()?'':' disabled'}>
+              ${['Researching','Contacted','In discussion','Agreed'].map(s=>`<option${d.status===s?' selected':''}>${s}</option>`).join('')}
+            </select></td>
+            <td><input class="audit-in" data-dist="${i}|notes" value="${esc(d.notes||'')}"${isAdmin()?'':' disabled'}></td>
+            <td>${isAdmin()?`<button class="btn-line sm danger" data-distdel="${i}">Remove</button>`:''}</td>
+          </tr>`).join('')}</tbody></table></div>`
+      : `<p class="empty">No candidates yet — add one once your team identifies a real local agent or distributor.</p>`;
+    qsa('[data-dist]').forEach(inp => inp.addEventListener('change', () => {
+      const [i, field] = inp.dataset.dist.split('|');
+      S.expansion.distributors[+i][field] = inp.value; save();
+    }));
+    qsa('[data-distdel]').forEach(b => b.addEventListener('click', () => {
+      S.expansion.distributors.splice(+b.dataset.distdel, 1);
+      save(); renderExpansion();
+    }));
+  }
+
+  const addBtn = el('expAddDist');
+  if(addBtn){
+    addBtn.hidden = !isAdmin();
+    addBtn.onclick = () => {
+      S.expansion.distributors.push({ name:'', market:'malaysia', contact:'', status:'Researching', notes:'' });
+      save(); renderExpansion();
+    };
+  }
+
+  const fitBox = el('expSkuFit');
+  if(fitBox){
+    fitBox.innerHTML = EXPANSION_MARKETS.map(m => `
+      <div class="mf"><label>${esc(m.name)}</label>
+        <textarea data-expfit="${m.k}" rows="3"${isAdmin()?'':' readonly'}>${esc(S.expansion.skuFit[m.k]||'')}</textarea></div>`).join('');
+    qsa('[data-expfit]').forEach(t => t.addEventListener('input', () => {
+      S.expansion.skuFit[t.dataset.expfit] = t.value; save();
+    }));
+  }
 }
 
 function renderAlloc(){
@@ -1796,7 +1964,7 @@ el('restoreFile').addEventListener('change', e => {
 /* ═══════════ BOOT ═══════════ */
 function renderAll(){
   renderRail(); renderOverview(); renderStrategy(); renderPricing();
-  renderBrandPulse(); renderMedia(); renderContentModule(); renderEvents(); renderCalendar(); renderApprovals(); renderReport(); renderAiStrategy();
+  renderBrandPulse(); renderMedia(); renderExpansion(); renderContentModule(); renderEvents(); renderCalendar(); renderApprovals(); renderReport(); renderAiStrategy();
   applyModuleVisibility();
   if(typeof renderProposals === 'function') renderProposals();
   // tables are rebuilt on each render, so re-attach sorting and download menus

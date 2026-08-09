@@ -377,6 +377,14 @@ function sectionRows(sec){
       return [['Phase','Months','Focus','What happens','Return target','Gate to next'],
         ...PHASES.map(p=>[`Phase ${p.n} — ${p.name}`,p.months,p.focus,p.doing,p.roas,p.gate])];
     }
+    case 'expansion': {
+      const head = ['Candidate','Market','Contact','Status','Notes'];
+      const rows = (S.expansion.distributors||[]).map(d => {
+        const marketName = (EXPANSION_MARKETS.find(m=>m.k===d.market)||{}).name || d.market;
+        return [d.name||'', marketName, d.contact||'', d.status||'', d.notes||''];
+      });
+      return [head, ...rows];
+    }
     default: return [['No data']];
   }
 }
@@ -388,7 +396,7 @@ const SECTION_LABELS = {
   compintel:'Competitor intelligence', brandpulse:'Brand pulse — site audit and personas',
   calendar:'Six-month calendar', events:'Activities', weeks:'First eight weeks',
   report:'Reporting actuals', gates:'Launch gates', approvals:'Requests and flags',
-  sendlog:'Creator outreach log', shoplinks:'Shop link status'
+  sendlog:'Creator outreach log', shoplinks:'Shop link status', expansion:'MY/TH expansion candidates'
 };
 
 function exportSection(sec, fmt){
