@@ -322,6 +322,28 @@
 
       <div class="panel">
         <div class="p-h">
+          <h3>Live shopfront pricing</h3>
+          <span class="p-note">what's actually listed on each of the 4 storefronts from linktr.ee/d.nuvo — logged manually and dated, not scraped</span>
+        </div>
+        <div id="shopfrontLinks"></div>
+        <div class="tb-wrap"><table class="tb" id="shopfrontPriceTable"></table></div>
+        <div class="hint-bar" id="shopfrontNote"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h">
+          <h3>Promo pricing</h3>
+          <span class="p-note">pick a promo strategy — Shopify sets the lead price, every other channel is checked against its own floor</span>
+        </div>
+        <div id="promoGrid"></div>
+        <p class="fh" style="margin-top:10px">Independent of Campaign setup's promo-period tagging (which drives Media
+          plan's channel-split suggestion) — selecting a promo here only affects the prices below, nothing else.</p>
+        <div class="tb-wrap" style="margin-top:12px"><table class="tb" id="promoPriceTable"></table></div>
+        <div id="promoApplyRow"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h">
           <h3>Discount simulator</h3>
           <span class="p-note">check any promo against the floor before it goes live</span>
         </div>

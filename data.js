@@ -47,37 +47,43 @@ const POSTING_TIMES = {
    these apply and to which month; media plan and calendar both read
    from that single source instead of separate free-text fields.  ── */
 const PROMO_PERIODS = [
-  { k:'bau',     name:'BAU (always-on)',   mechanicNote:'Full price, always-on voucher — the floor-safe default.' },
-  { k:'payday',  name:'Payday window',     mechanicNote:'Late-month spend spike — align voucher pushes with SG payday cycles.' },
-  { k:'flash',   name:'Custom flash sale', mechanicNote:'Short, time-boxed live/marketplace mechanic — never below the price floor.' },
-  { k:'9.9',     name:'9.9 Mega Sale',     mechanicNote:'Marketplace mega-sale — heavier Shopee/TikTok weighting converts better.' },
-  { k:'10.10',   name:'10.10',             mechanicNote:'Secondary marketplace moment — smaller than 9.9/11.11, still worth a bundle push.' },
-  { k:'11.11',   name:'11.11 Mega Sale',   mechanicNote:'The year’s largest marketplace event — full voucher stack, heaviest in-platform weighting.' },
-  { k:'12.12',   name:'12.12',             mechanicNote:'Festive close-out — pair with clearance and gift-set framing.' },
-  { k:'cnyraya', name:'CNY / Raya',        mechanicNote:'Cultural gifting moment — bundle and gift-set framing over discount depth.' }
+  { k:'bau',     name:'BAU (always-on)',   mechanicNote:'Full price, always-on voucher — the floor-safe default.', discountPct:0 },
+  { k:'payday',  name:'Payday window',     mechanicNote:'Late-month spend spike — align voucher pushes with SG payday cycles.', discountPct:10 },
+  { k:'flash',   name:'Custom flash sale', mechanicNote:'Short, time-boxed live/marketplace mechanic — never below the price floor.', discountPct:20 },
+  { k:'9.9',     name:'9.9 Mega Sale',     mechanicNote:'Marketplace mega-sale — heavier Shopee/TikTok weighting converts better.', discountPct:20 },
+  { k:'10.10',   name:'10.10',             mechanicNote:'Secondary marketplace moment — smaller than 9.9/11.11, still worth a bundle push.', discountPct:15 },
+  { k:'11.11',   name:'11.11 Mega Sale',   mechanicNote:'The year’s largest marketplace event — full voucher stack, heaviest in-platform weighting.', discountPct:25 },
+  { k:'12.12',   name:'12.12',             mechanicNote:'Festive close-out — pair with clearance and gift-set framing.', discountPct:20 },
+  { k:'cnyraya', name:'CNY / Raya',        mechanicNote:'Cultural gifting moment — bundle and gift-set framing over discount depth.', discountPct:15 }
 ];
 
 /* ── SKUs. cogs is admin-only; floor derives from it. ── */
 const SKUS = [
   { id:'vitc',  name:'Vitamin C Ampoule 15.5%', spec:'Fresh Ceramided™ · 18ml',
-    tier:'Core', msrp:56, sale:35, cogs:9,  units:500, handle:'', url:'', urlOk:null,
+    tier:'Core', msrp:56, sale:35, cogs:9,  shipping:0, handling:0, units:500, handle:'', url:'', urlOk:null,
     role:'Hero', roleNote:'Anchors every Spark Ad and the Hero Repair Duo.' },
   { id:'water', name:'Water Cream 80ml', spec:'Fresh Ceramided™',
-    tier:'Core', msrp:51, sale:29, cogs:8,  units:500, handle:'', url:'', urlOk:null,
+    tier:'Core', msrp:51, sale:29, cogs:8,  shipping:0, handling:0, units:500, handle:'', url:'', urlOk:null,
     role:'Anchor', roleNote:'Bundle partner for the hero. High repeat rate.' },
   { id:'sun',   name:'Aqua C Sun Serum SPF50+', spec:'50ml',
-    tier:'Core', msrp:28, sale:19, cogs:5,  units:500, handle:'', url:'', urlOk:null,
+    tier:'Core', msrp:28, sale:19, cogs:5,  shipping:0, handling:0, units:500, handle:'', url:'', urlOk:null,
     role:'Trial', roleNote:'Lowest barrier. Daily-use habit builds repurchase.' },
   { id:'toner', name:'Essential Toner 200ml', spec:'Fresh Ceramided™',
-    tier:'Entry', msrp:45, sale:25, cogs:6, units:500, handle:'', url:'', urlOk:null,
+    tier:'Entry', msrp:45, sale:25, cogs:6, shipping:0, handling:0, units:500, handle:'', url:'', urlOk:null,
     role:'Cold entry', roleNote:'Editor\u2019s Pick trust signal for first purchase.' },
   { id:'calm',  name:'Trouble Calming Ampoule', spec:'ACZERO™ · 30ml',
-    tier:'Core', msrp:64, sale:39, cogs:10, units:500, handle:'', url:'', urlOk:null,
+    tier:'Core', msrp:64, sale:39, cogs:10, shipping:0, handling:0, units:500, handle:'', url:'', urlOk:null,
     role:'Premium', roleNote:'Highest ASP. Acne and sensitive niche from M3.' },
   { id:'eye',   name:'Eye Cream 35ml', spec:'Fresh Ceramided™',
-    tier:'Core', msrp:56, sale:29, cogs:8,  units:500, handle:'', url:'', urlOk:null,
+    tier:'Core', msrp:56, sale:29, cogs:8,  shipping:0, handling:0, units:500, handle:'', url:'', urlOk:null,
     role:'Upsell', roleNote:'Email add-on to past buyers. Never a cold-traffic lead.' }
 ];
+
+/* ── Per-platform fee rates for the floor engine. Shopify is the lead
+   price (0% — own store), so it's also the default floor reference.
+   Lazada starts at 0 until the real commission is confirmed — nothing
+   guessed, same rule as everywhere else in this file. ── */
+const PLATFORM_FEES = { shopify:0, shopee:0.16, tiktok:0.02, lazada:0 };
 
 const BUNDLES = [
   { id:'starter', name:'Barrier Starter Duo', tier:'Entry',
@@ -93,6 +99,22 @@ const BUNDLES = [
     parts:['calm','water','sun'], price:79, handle:'', url:'', urlOk:null,
     stage:'Concern-led retargeting', note:'For the acne and sensitivity audience segment.' }
 ];
+
+/* ── Live shopfront pricing — the 4 storefronts linked from linktr.ee/d.nuvo
+   and given directly by the team. TikTok Shop has no confirmed storefront
+   link yet (Linktree only lists the TikTok social profile, not a shop) —
+   stays blank rather than guessed, same rule as Shop links above. */
+const SHOPFRONT_PLATFORMS = [
+  { k:'shopify', name:'Shopify (DTC)' },
+  { k:'shopee',  name:'Shopee' },
+  { k:'lazada',  name:'Lazada' },
+  { k:'tiktok',  name:'TikTok Shop' }
+];
+const SHOPFRONT_LINK_DEFAULTS = {
+  shopee: 'https://shopee.sg/d.nuvo',
+  lazada: 'https://www.lazada.sg/dnuvo',
+  tiktok: ''
+};
 
 /* ── Masstige tiering ── */
 const TIERS = [
@@ -185,7 +207,7 @@ const RULES = [
   { t:'Reviews before ads', b:'No paid spend until the review gate clears. This single rule decides whether the budget works or is wasted.' },
   { t:'Traffic lands on bundles', b:'Cost per acquisition here is about S$18.82. A S$19–29 single product cannot absorb that. A S$38–53 bundle can.' },
   { t:'Two channels, then more', b:'Splitting S$2,500 across five platforms gives none of them enough to exit learning. Concentrate, then widen.' },
-  { t:'Never below the floor', b:'Floor equals cost times 2.5 plus platform commission plus payment fee. Every promo is checked against it first.' }
+  { t:'Never below the floor', b:'Floor equals cost plus shipping plus handling plus platform fee, sized to leave 3x cost as profit. Shopify is the lead price every other channel is checked against. Every promo is checked before it goes live.' }
 ];
 
 /* ── MY/TH expansion research — findings from real market/regulatory

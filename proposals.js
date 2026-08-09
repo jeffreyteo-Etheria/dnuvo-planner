@@ -364,3 +364,192 @@ function renderShopSync(){
 
   wireCells();
 }
+
+/* ── LIVE SHOPFRONT PRICING ─────────────────────────
+   What is actually listed on each of the 4 storefronts
+   linked from linktr.ee/d.nuvo — a separate, dated log
+   next to the internal SKU price book above, not a
+   replacement for it. Shopify's link reuses the domain
+   already set in Shop links; the other 3 are storefront
+   home links (no per-product deep-link pattern exists
+   for them here), editable by an admin, blank until set. */
+function shopfrontUrlFor(platformKey){
+  if(platformKey === 'shopify') return S.settings.shopDomain || '';
+  return (S.settings.shopfrontLinks || {})[platformKey] || '';
+}
+
+function renderShopfrontLinks(){
+  const box = el('shopfrontLinks'); if(!box) return;
+  box.innerHTML = `<div class="shop-head">` + SHOPFRONT_PLATFORMS.map(p => {
+    const url = shopfrontUrlFor(p.k);
+    const editable = isAdmin() && p.k !== 'shopify';
+    return `<div class="sf-link">
+      <span class="sd-l">${esc(p.name)}</span>
+      ${editable
+        ? `<input data-sflink="${p.k}" value="${esc(url)}" placeholder="storefront URL">`
+        : url
+          ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(url.replace(/^https?:\/\//,''))}</a>`
+          : `<span class="unlinked">not linked yet</span>`}
+    </div>`;
+  }).join('') + `</div>`;
+
+  qsa('[data-sflink]', box).forEach(inp => inp.addEventListener('change', () => {
+    S.settings.shopfrontLinks[inp.dataset.sflink] = inp.value.trim();
+    save(); renderShopfrontLinks();
+  }));
+}
+
+function renderShopfrontPriceTable(){
+  const box = el('shopfrontPriceTable'); if(!box) return;
+  const bundles = BUNDLES.map(bundleView);
+  const rows = [...S.skus.map(s => ({...s, kind:'sku'})), ...bundles.map(b => ({...b, kind:'bundle'}))];
+  S.shopfrontPrices = S.shopfrontPrices || {};
+
+  box.innerHTML = `<thead><tr><th rowspan="2">Item</th>${SHOPFRONT_PLATFORMS.map(p =>
+      `<th colspan="2">${esc(p.name)}</th>`).join('')}</tr>
+    <tr>${SHOPFRONT_PLATFORMS.map(() => `<th class="n">Price</th><th>As of</th>`).join('')}</tr></thead><tbody>` +
+    rows.map(r => {
+      const rec = S.shopfrontPrices[r.id] = S.shopfrontPrices[r.id] || {};
+      return `<tr><td><b>${esc(r.name)}</b></td>` + SHOPFRONT_PLATFORMS.map(p => {
+        const d = rec[p.k] || {};
+        return `<td class="n"><span class="ed" contenteditable="true" data-sfprice="${r.id}|${p.k}">${d.price!=null?esc(d.price):''}</span></td>
+          <td style="font-size:11px;color:var(--faint)">${esc(d.checkedAt||'—')}</td>`;
+      }).join('') + `</tr>`;
+    }).join('') + `</tbody>`;
+
+  qsa('[data-sfprice]', box).forEach(c => c.addEventListener('blur', () => {
+    const [id, plat] = c.dataset.sfprice.split('|');
+    const raw = c.textContent.trim();
+    S.shopfrontPrices[id] = S.shopfrontPrices[id] || {};
+    if(!raw){
+      delete S.shopfrontPrices[id][plat];
+    } else if(num(raw) === 0 && raw !== '0'){
+      toast(`"${raw}" doesn't look like a price — not saved`);
+      c.textContent = (S.shopfrontPrices[id][plat]||{}).price != null ? String(S.shopfrontPrices[id][plat].price) : '';
+      return;
+    } else {
+      S.shopfrontPrices[id][plat] = { price: num(raw), checkedAt: new Date().toISOString().slice(0,10) };
+    }
+    save();
+    renderShopfrontPriceTable();
+    renderShopfrontNote(rows);
+  }));
+
+  renderShopfrontNote(rows);
+}
+
+/* Flags any logged Shopify price that disagrees with the internal SKU/bundle
+   price book — the two are meant to match; a gap usually means one side
+   changed without the other being told. */
+function renderShopfrontNote(rows){
+  const note = el('shopfrontNote'); if(!note) return;
+  const mismatches = rows.filter(r => {
+    const obs = (S.shopfrontPrices[r.id]||{}).shopify;
+    const internal = r.sale != null ? r.sale : r.price;
+    return obs && obs.price != null && num(obs.price) !== num(internal);
+  });
+  if(!mismatches.length){
+    note.className = 'hint-bar ok';
+    note.textContent = 'No logged Shopify price disagrees with the internal price book above.';
+    return;
+  }
+  note.className = 'hint-bar bad';
+  note.innerHTML = `<b>${mismatches.length} item${mismatches.length===1?'':'s'} logged at a different price than the internal book.</b> ` +
+    mismatches.map(r => {
+      const obs = S.shopfrontPrices[r.id].shopify;
+      const internal = r.sale != null ? r.sale : r.price;
+      return `${esc(r.name)}: live ${esc(S.settings.cur)}${obs.price} vs book ${esc(S.settings.cur)}${internal}`;
+    }).join(' · ');
+}
+
+/* ── PROMO PRICING ──────────────────────────────────
+   Pick a named promo strategy (BAU/Payday/9.9/11.11/…, the same catalog
+   Campaign setup uses) and see the resulting price — Shopify is always
+   the lead: MSRP × (1 − discount%) — checked against every other
+   platform's own floor, since a fee-heavier channel can fail at a price
+   Shopify clears fine. Apply writes the result into Live shopfront
+   pricing above; nothing here retags a month or touches channel-split
+   suggestions in Media plan. */
+let selectedPromo = 'bau';
+
+function renderPromoGrid(){
+  const box = el('promoGrid'); if(!box) return;
+  box.innerHTML = `<div class="promo-grid">${PROMO_PERIODS.map(p => {
+    const pct = (S.settings.promoDiscounts||{})[p.k] != null ? S.settings.promoDiscounts[p.k] : p.discountPct;
+    return `<div class="promo-card selectable${selectedPromo===p.k?' on':''}" data-promo="${p.k}">
+      <span>${esc(p.k)}</span><b>${esc(p.name)}</b>
+      <p>${esc(p.mechanicNote)}</p>
+      <p style="margin-top:6px">Suggested discount: ${isAdmin()
+        ? `<input type="number" min="0" max="90" class="pct-in" data-promopct="${p.k}" value="${pct}">%`
+        : `<b>${pct}%</b>`}</p>
+    </div>`;
+  }).join('')}</div>`;
+
+  qsa('[data-promo]', box).forEach(card => card.addEventListener('click', () => {
+    selectedPromo = card.dataset.promo;
+    renderPromoGrid();
+    renderPromoPriceTable();
+  }));
+  qsa('[data-promopct]', box).forEach(inp => {
+    inp.addEventListener('click', e => e.stopPropagation());
+    inp.addEventListener('change', () => {
+      S.settings.promoDiscounts[inp.dataset.promopct] = num(inp.value);
+      save();
+      renderPromoPriceTable();
+    });
+  });
+}
+
+function renderPromoPriceTable(){
+  const box = el('promoPriceTable'); if(!box) return;
+  const pct = (S.settings.promoDiscounts||{})[selectedPromo] || 0;
+  const promo = PROMO_PERIODS.find(p => p.k === selectedPromo);
+
+  const head = `<th>Item</th><th class="n">Suggested price</th>` +
+    SHOPFRONT_PLATFORMS.map(p => `<th>${esc(p.name)}</th>`).join('');
+
+  box.innerHTML = `<thead><tr>${head}</tr></thead><tbody>` +
+    S.skus.map(s => {
+      const price = Math.round(s.msrp * (1 - pct/100) * 100) / 100;
+      const platformCells = SHOPFRONT_PLATFORMS.map(p => {
+        const fl = floorOf(s, p.k);
+        const ok = price >= fl;
+        const fee = feeFor(p.k);
+        const afterFee = price * (1 - fee);
+        const profit = afterFee - s.cogs - (s.shipping||0) - (s.handling||0);
+        const required = 3 * s.cogs;
+        return `<td><div class="pp-cell">
+          <span class="pill ${ok?'p-g':'p-r'}">${ok?'Clears':'Below'} floor ${cur(fl)}</span>
+          ${isAdmin() ? `<span class="pp-sub">Fee ${(fee*100).toFixed(0)}% · Profit ${cur(profit)} (need ${cur(required)})</span>` : ''}
+        </div></td>`;
+      }).join('');
+      return `<tr><td><b>${esc(s.name)}</b></td><td class="n">${cur(price)}</td>${platformCells}</tr>`;
+    }).join('') + `</tbody>`;
+
+  const applyBox = el('promoApplyRow');
+  if(!applyBox) return;
+  if(!isAdmin()){ applyBox.innerHTML = ''; return; }
+  applyBox.innerHTML = `<button class="btn-line sm" id="promoApplyBtn" style="margin-top:12px">Apply ${esc(promo?promo.name:'')} pricing across the stores</button>`;
+  el('promoApplyBtn').addEventListener('click', () => {
+    let applied = 0;
+    const skipped = [];
+    S.skus.forEach(s => {
+      const price = Math.round(s.msrp * (1 - pct/100) * 100) / 100;
+      SHOPFRONT_PLATFORMS.forEach(p => {
+        const fl = floorOf(s, p.k);
+        if(price >= fl){
+          S.shopfrontPrices[s.id] = S.shopfrontPrices[s.id] || {};
+          S.shopfrontPrices[s.id][p.k] = { price, checkedAt: new Date().toISOString().slice(0,10) };
+          applied++;
+        } else {
+          skipped.push(`${s.name} on ${p.name}`);
+        }
+      });
+    });
+    save();
+    if(typeof renderShopfrontPriceTable === 'function') renderShopfrontPriceTable();
+    toast(skipped.length
+      ? `Applied to ${applied} listing${applied===1?'':'s'} — skipped ${skipped.length} that would break their floor`
+      : `Applied to all ${applied} listings`);
+  });
+}

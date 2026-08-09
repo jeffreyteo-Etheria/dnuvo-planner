@@ -48,10 +48,32 @@ function normalizeState(obj){
   s.expansion.distributors = s.expansion.distributors || [];
   s.personas = s.personas || {};
   s.personas.answers = s.personas.answers || [];
+  s.settings.shopfrontLinks = s.settings.shopfrontLinks || Object.assign({}, SHOPFRONT_LINK_DEFAULTS);
+  /* Seeded once from a live check of shop.dnuvo.com.sg on 2026-08-09 — after
+     that this is team-logged data like everything else here, not re-fetched
+     automatically (no backend to do that safely from a static site). */
+  s.shopfrontPrices = s.shopfrontPrices || {
+    vitc:  { shopify: { price: 35, checkedAt: '2026-08-09' } },
+    water: { shopify: { price: 29, checkedAt: '2026-08-09' } },
+    sun:   { shopify: { price: 26, checkedAt: '2026-08-09' } },
+    toner: { shopify: { price: 25, checkedAt: '2026-08-09' } },
+    calm:  { shopify: { price: 39, checkedAt: '2026-08-09' } },
+    eye:   { shopify: { price: 29, checkedAt: '2026-08-09' } }
+  };
   s.expansion.skuFit = s.expansion.skuFit || {
     malaysia: 'Barrier-repair/ceramide story matches Malaysia\'s premium-import positioning. Lead with the Hero Repair Duo; consider a CNY gift-set bundle for the Chinese-Malaysian segment.',
     thailand: 'Thailand skincare is trending toward "science-based, skin-health" positioning — direct match for d.nuvo\'s barrier-repair claims. Lead with the same hero SKU; no repositioning needed.'
   };
+  // A plan saved before shipping/handling existed won't have them on each
+  // SKU — backfill rather than let the floor formula read undefined as 0
+  // silently everywhere (explicit here, once, instead of scattered ||0s).
+  s.skus.forEach(sk => {
+    if(sk.shipping == null) sk.shipping = 0;
+    if(sk.handling == null) sk.handling = 0;
+  });
+  s.settings.platformFees = Object.assign({}, PLATFORM_FEES, s.settings.platformFees || {});
+  s.settings.promoDiscounts = Object.assign(
+    {}, ...PROMO_PERIODS.map(p => ({ [p.k]: p.discountPct })), s.settings.promoDiscounts || {});
   return s;
 }
 function load(){
@@ -96,12 +118,21 @@ function toast(msg){
 
 /* Floor price. Computed server-side of the ACL boundary —
    team sees the result, never the cost that produced it. */
-function floorOf(sku, commission){
-  const c = commission == null ? 0.16 : commission;
-  return (sku.cogs * 2.5) / (1 - c) + 0.5;
+/* Floor price for a SKU on a given platform — the minimum price that still
+   clears shipping, handling, COGS and the platform fee with 3×COGS left
+   over as profit. 4×COGS in the numerator = 1× to recover cost + 3× the
+   required margin. Shopify (0% fee) is the default since it's the lead
+   price every other channel is priced against. */
+function feeFor(platformKey){
+  const fees = (S.settings && S.settings.platformFees) || PLATFORM_FEES;
+  return fees[platformKey] != null ? fees[platformKey] : 0;
 }
-function maxDiscount(sku, commission){
-  const f = floorOf(sku, commission);
+function floorOf(sku, platformKey){
+  const fee = feeFor(platformKey || 'shopify');
+  return (4 * sku.cogs + (sku.shipping||0) + (sku.handling||0)) / (1 - fee);
+}
+function maxDiscount(sku, platformKey){
+  const f = floorOf(sku, platformKey);
   if(!sku.sale || sku.sale <= f) return 0;
   return Math.floor((1 - f / sku.sale) * 100);
 }
@@ -1053,51 +1084,74 @@ function renderPricing(){
 
   wireCells();
   if(typeof renderShopSync === 'function') renderShopSync();
+  if(typeof renderShopfrontLinks === 'function') renderShopfrontLinks();
+  if(typeof renderShopfrontPriceTable === 'function') renderShopfrontPriceTable();
+  if(typeof renderPromoGrid === 'function') renderPromoGrid();
+  if(typeof renderPromoPriceTable === 'function') renderPromoPriceTable();
   renderSim();
 }
 
 function renderSim(){
   const opts = S.skus.map((s,i)=>`<option value="${i}">${esc(s.name)}</option>`).join('');
+  const platOpts = SHOPFRONT_PLATFORMS.map(p =>
+    `<option value="${p.k}"${p.k==='shopee'?' selected':''}>${esc(p.name)} — ${(feeFor(p.k)*100).toFixed(0)}% fee</option>`
+  ).join('');
   el('simBox').innerHTML = `
     <div class="sim-ctl">
       <label>Product</label><select id="simSku">${opts}</select>
       <label>Platform</label>
-      <select id="simCh">
-        <option value="0.02">TikTok Shop — 2% commission</option>
-        <option value="0.16" selected>Shopee — 16% commission</option>
-        <option value="0.00">Shopify — own store</option>
-      </select>
+      <select id="simCh">${platOpts}</select>
       <label>Discount <span class="sim-val" id="simPctV">15%</span></label>
       <input type="range" id="simPct" min="0" max="50" value="15">
     </div>
     <div class="sim-out" id="simOut"></div>`;
 
+  const costInput = (s, field) => isAdmin()
+    ? `<input type="number" step="0.01" min="0" class="audit-in" style="max-width:90px" data-simcost="${field}" value="${s[field]||0}">`
+    : cur(s[field]||0);
+
   const upd = () => {
     const s = S.skus[+el('simSku').value];
-    const comm = parseFloat(el('simCh').value);
+    const platformKey = el('simCh').value;
+    const fee = feeFor(platformKey);
     const pct = +el('simPct').value;
     el('simPctV').textContent = pct + '%';
     const net = s.sale * (1 - pct/100);
-    const fl = floorOf(s, comm);
+    const fl = floorOf(s, platformKey);
     const ok = net >= fl;
-    const afterComm = net * (1 - comm) - 0.5;
+    const afterFee = net * (1 - fee);
+    const netProfit = afterFee - s.cogs - (s.shipping||0) - (s.handling||0);
+    const requiredProfit = 3 * s.cogs;
+    const profitOk = netProfit >= requiredProfit;
+
     const rows = [
       ['Listed price', cur(s.sale), ''],
       [`Discount ${pct}%`, '−' + cur(s.sale - net), ''],
       ['Customer pays', cur(net), 'hero'],
-      ['After commission and fees', cur(afterComm), ''],
-      ['Floor price', cur(fl), '']
+      [`Platform fee (${(fee*100).toFixed(0)}%)`, '−' + cur(net - afterFee), '']
     ];
     if(isAdmin()){
-      rows.splice(4, 0, ['Cost of goods', cur(s.cogs), '']);
-      rows.push(['Margin per unit', cur(afterComm - s.cogs), afterComm - s.cogs > 0 ? '' : 'fail']);
+      rows.push(['Shipping', costInput(s, 'shipping'), '']);
+      rows.push(['Handling', costInput(s, 'handling'), '']);
+      rows.push(['Cost of goods', cur(s.cogs), '']);
+      rows.push(['Net profit', cur(netProfit), profitOk ? '' : 'fail']);
+      rows.push([profitOk ? 'Clears 3× COGS profit' : 'Below 3× COGS profit',
+        profitOk ? cur(netProfit - requiredProfit) + ' of headroom' : cur(requiredProfit - netProfit) + ' short',
+        profitOk ? 'pass' : 'fail']);
     }
+    rows.push(['Floor price', cur(fl), '']);
     rows.push([ok ? 'Clears the floor' : 'Breaks the floor',
       ok ? cur(net - fl) + ' of headroom' : cur(fl - net) + ' below', ok ? 'pass' : 'fail']);
     el('simOut').innerHTML = rows.map(([l,v,c]) =>
       `<div class="so-row ${c}"><span>${l}</span><b>${v}</b></div>`).join('') +
       (!ok && !isAdmin() ? `<div style="padding:11px 15px;border-top:1px solid var(--line)">
         <button class="btn-line sm" id="simReq">Propose this as the new sale price</button></div>` : '');
+
+    qsa('[data-simcost]', el('simOut')).forEach(inp => inp.addEventListener('change', () => {
+      s[inp.dataset.simcost] = num(inp.value);
+      save();
+      upd();
+    }));
     const rb = el('simReq');
     if(rb) rb.addEventListener('click', () => {
       // This is a real sale-price change on a real SKU field, so it goes
