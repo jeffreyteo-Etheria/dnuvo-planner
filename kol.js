@@ -10,6 +10,7 @@
 let kolTab = 'ugc';
 let kolStage = 'creators';
 let schedView = 'table';
+let schedStatusFilter = 'all';
 let schedCalMonth = null;
 let schedCalFilters = { kol:'', type:'', status:'' };
 const SCHED_BOARD_TONE = { planned:'p-n', confirmed:'p-v', live:'p-a', done:'p-g' };
@@ -140,10 +141,30 @@ function renderKol(){
   renderKolBudgetDrilldown();
   renderLongTailPlan();
   renderCrm();
+  renderKolActivityTopline();
   renderKolSchedule();
   renderKolScheduleBoard();
   renderKolScheduleCalendar();
   if(typeof refreshSortable === 'function'){ refreshSortable(); injectPanelExports(); }
+}
+
+/* Budget → Committed → Spend for the month currently focused in the Media
+   plan tab (S.mediaFocus) — sits above the activity list so a planner can
+   see KOL spend health without leaving the Post stage to cross-reference
+   the KPI stage's budget drilldown or payments panels. */
+function renderKolActivityTopline(){
+  const box = el('kolActivityTopline'); if(!box) return;
+  const i = Number.isInteger(S.mediaFocus) ? S.mediaFocus : 0;
+  const d = kolBudgetDrilldown(i);
+  const spend = d.entries
+    .filter(e => (e.paidStatus||'unpaid') === 'paid')
+    .reduce((a,e) => a + (e.feeAgreed||0), 0);
+  const c = S.settings.cur;
+  box.innerHTML = `<div class="pay-summary">
+    <div class="pay-tile"><span>${esc(d.month)} KOL budget</span><b>${esc(c)}${Math.round(d.pool).toLocaleString()}</b></div>
+    <div class="pay-tile"><span>Committed</span><b>${esc(c)}${Math.round(d.committed).toLocaleString()}</b></div>
+    <div class="pay-tile tot"><span>Spend (paid)</span><b>${esc(c)}${Math.round(spend).toLocaleString()}</b></div>
+  </div>`;
 }
 
 function renderKolStageTabs(){
@@ -634,6 +655,25 @@ function schedForm(idx){
     });
 }
 
+/* Status used by the Post-stage activity list's dropdown — the same
+   board taxonomy the Kanban view already uses (SCHED_BOARD), plus a
+   computed Overdue for anything past its date and not yet done. The
+   filter only changes what's displayed; S.schedule itself is untouched,
+   so switching the dropdown never loses a record. */
+function activityStatusOf(e){
+  const today = new Date().toISOString().slice(0,10);
+  if(!e.done && e.date < today) return 'overdue';
+  return schedBoardOf(e);
+}
+const ACTIVITY_STATUS_OPTIONS = [
+  { k:'all', name:'All' },
+  { k:'planned', name:'Planned (new)' },
+  { k:'confirmed', name:'Confirmed' },
+  { k:'live', name:'Live' },
+  { k:'done', name:'Done (past)' },
+  { k:'overdue', name:'Overdue' }
+];
+
 function renderKolSchedule(){
   const box = el('kolSched'); if(!box) return;
   const all = (S.schedule || []).slice().sort((a,b) =>
@@ -644,10 +684,22 @@ function renderKolSchedule(){
     return;
   }
   const today = new Date().toISOString().slice(0,10);
-  box.innerHTML = `<div class="tb-wrap"><table class="tb" id="schedTable">
+  const filterBar = `<div class="sched-status-filter">
+    <label>Status <select id="schedStatusFilter">
+      ${ACTIVITY_STATUS_OPTIONS.map(o => `<option value="${o.k}"${schedStatusFilter===o.k?' selected':''}>${esc(o.name)}</option>`).join('')}
+    </select></label>
+    <span class="sub">${all.length} total recorded — filter only changes this view</span>
+  </div>`;
+  const list = schedStatusFilter === 'all' ? all : all.filter(e => activityStatusOf(e) === schedStatusFilter);
+  if(!list.length){
+    box.innerHTML = filterBar + `<p class="empty">No activities match this filter. ${all.length} recorded overall — change the filter above to see them.</p>`;
+    el('schedStatusFilter').addEventListener('change', e => { schedStatusFilter = e.target.value; renderKolSchedule(); });
+    return;
+  }
+  box.innerHTML = filterBar + `<div class="tb-wrap"><table class="tb" id="schedTable">
     <thead><tr><th>Date</th><th>Time</th><th>Creator</th><th>Type</th><th>Deliverable</th>
       <th>Owner</th><th>Notes</th><th>Proof</th><th>Status</th><th class="n">Fee</th><th>Payment</th><th></th></tr></thead><tbody>` +
-    all.map(e => {
+    list.map(e => {
       const past = e.date < today;
       const kol = S.kols.find(x => x.handle === e.kol);
       return `<tr class="${e.done?'sc-done':past&&!e.done?'sc-late':''}">
@@ -673,6 +725,7 @@ function renderKolSchedule(){
         </div></td></tr>`;
     }).join('') + `</tbody></table></div>`;
 
+  el('schedStatusFilter').addEventListener('change', e => { schedStatusFilter = e.target.value; renderKolSchedule(); });
   qsa('[data-scdone]').forEach(b => b.addEventListener('click', () => {
     const e = S.schedule.find(x=>x.id===b.dataset.scdone);
     if(!e.done && !e.proofLink){

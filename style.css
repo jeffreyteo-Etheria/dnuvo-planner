@@ -512,6 +512,10 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
 
 .sched-view-toggle{display:flex;gap:6px}
 .sched-view-toggle .on{border-color:var(--violet);background:var(--violet-lt);color:var(--violet)}
+.sched-status-filter{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.sched-status-filter label{font-size:11px;color:var(--mute);display:flex;align-items:center;gap:6px}
+.sched-status-filter select{border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:12px;color:var(--ink-3);background:var(--panel)}
+.sched-status-filter .sub{font-size:11px;color:var(--faint)}
 .sched-board{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
 .sched-col{border:1px solid var(--line);border-radius:8px;background:var(--line-2);
   padding:10px;transition:border-color .15s}

@@ -154,6 +154,14 @@ const GATES = [
     why:'A S$97 set converts to people who already trust the brand. Selling it earlier wastes the impression.' }
 ];
 
+/* Target ROAS ramp for the Media plan's per-month view — derived from the
+   already-authored plan copy in METRICS ("1.5× by M3, 2.0× by M5"), not a
+   new number. M1-M3 hold the floor, M4 interpolates, M5-M6 hold the goal. */
+function targetRoasFor(monthIndex){
+  const ramp = [1.5, 1.5, 1.5, 1.75, 2.0, 2.0];
+  return ramp[monthIndex] != null ? ramp[monthIndex] : ramp[ramp.length-1];
+}
+
 /* ── Phases ── */
 const PHASES = [
   { n:1, name:'Build trust', months:'M1–M2', tag:'p-g',
@@ -196,14 +204,42 @@ const EXPANSION_MARKETS = [
 ];
 const EXPANSION_CHECKLIST = {
   malaysia: [
-    { k:'cnh', label:'CNH (Cosmetic Notification Holder) secured', why:'Legally required — d.nuvo isn\'t a Malaysian-registered company, so a local agent must hold this role before any product is notified.' },
-    { k:'npra', label:'NPRA cosmetic notification submitted', why:'Required under CDCR 1984 before any sale, import, or possession in Malaysia. Selling unnotified stock risks seizure and platform bans.' },
-    { k:'halal', label:'Halal certification evaluated (optional)', why:'Not legally required for skincare, but worth a deliberate yes/no rather than a default — relevant to reach in this market.' }
+    { k:'cnh', label:'CNH (Cosmetic Notification Holder) secured', why:'Legally required — d.nuvo isn\'t a Malaysian-registered company, so a local agent must hold this role before any product is notified.',
+      url:'https://www.freyrsolutions.com/who-is-a-cnh-in-malaysia' },
+    { k:'npra', label:'NPRA cosmetic notification submitted', why:'Required under CDCR 1984 before any sale, import, or possession in Malaysia. Selling unnotified stock risks seizure and platform bans. Submitted online through NPRA\'s QUEST 3+ portal.',
+      url:'https://www.npra.gov.my/index.php/en/component/content/article/147-guidelines-central/guidelines-cosmetic/1595-2-0-cosmetic-notification' },
+    { k:'halal', label:'Halal certification evaluated (optional)', why:'Not legally required for skincare, but worth a deliberate yes/no rather than a default — relevant to reach in this market.',
+      url:'https://www.npra.gov.my/index.php/en/frequently-asked-questions-faqs.html' }
   ],
   thailand: [
-    { k:'entity', label:'Local entity or agent secured', why:'Same structural requirement as Malaysia\'s CNH — a foreign brand needs a local party to notify through.' },
-    { k:'fda', label:'Thai FDA cosmetic notification submitted', why:'Required under the ASEAN Cosmetic Directive before legal sale.' },
-    { k:'labeling', label:'Thai-language labeling prepared', why:'Standard requirement for retail sale — confirm exact wording rules with the local agent once secured.' }
+    { k:'entity', label:'Local entity or agent secured', why:'Same structural requirement as Malaysia\'s CNH — a foreign brand needs a local party to notify through. Thai FDA\'s e-submission system does not accept applications directly from foreign companies.',
+      url:'https://en.reach24h.com/service/cosmetic/thailand-cosmetics-notification' },
+    { k:'fda', label:'Thai FDA cosmetic notification submitted', why:'Required under the ASEAN Cosmetic Directive before legal sale. Filed through the SKYNET e-submission system at least 15 days before import; certificate valid 3 years.',
+      url:'https://thailand.freyrsolutions.com/cosmetic-product-notification-in-thailand' },
+    { k:'labeling', label:'Thai-language labeling prepared', why:'Standard requirement for retail sale — confirm exact wording rules with the local agent once secured.',
+      url:'https://www.artixio.com/post/thailand-cosmetics-regulations-registration-process' }
+  ]
+};
+
+/* ── Research leads — real, sourced regulatory/CNH-agent firms that could
+   act as local agent/Cosmetic Notification Holder in each market. This is
+   the verifiable category of "distributor/CNH candidate": firms that
+   publicly advertise this exact service. It is a starting shortlist to
+   vet, not an engaged contact — kept separate from S.expansion.distributors
+   (that table only ever holds contacts the team has actually verified). */
+const EXPANSION_LEADS = {
+  malaysia: [
+    { name:'Freyr Solutions', role:'Regulatory consultant / can act as local CNH agent', url:'https://www.freyrsolutions.com/who-is-a-cnh-in-malaysia' },
+    { name:'REACH24H', role:'Cosmetic notification and regulatory registration agent', url:'https://en.reach24h.com/service/cosmetic/malaysia-cosmetics-notification' },
+    { name:'CIRS Group', role:'ASEAN cosmetics registration consultant, covers Malaysia', url:'https://www.cirs-group.com/en/cosmetics/asean-cosmetics-registration-thailand-vietnam-philippines-malaysia-singapore-indonesia' },
+    { name:'Emerhub', role:'Market-entry and cosmetic product registration consultant', url:'https://emerhub.com/malaysia/cosmetics-registration-malaysia/' },
+    { name:'Conzlab Berhad', role:'NPRA cosmetic notification service provider', url:'https://www.conzlab.com/shop/national-pharmaceutical-regulatory-agency-npra-cosmetic-notification-not-370' }
+  ],
+  thailand: [
+    { name:'Freyr Solutions (Thailand)', role:'Regulatory consultant / can act as local agent for Thai FDA filing', url:'https://thailand.freyrsolutions.com/cosmetic-product-notification-in-thailand' },
+    { name:'REACH24H', role:'Cosmetic notification and regulatory registration agent', url:'https://en.reach24h.com/service/cosmetic/thailand-cosmetics-notification' },
+    { name:'Emerhub', role:'Market-entry consultant, foreign-investor cosmetic registration guide', url:'https://emerhub.com/thailand/cosmetic-product-registration-in-thailand/' },
+    { name:'Lex Bangkok', role:'Legal/regulatory firm handling Thai FDA cosmetic registration for foreign brands', url:'https://lexbangkok.com/thai-fda-registration-korean-cosmetic-brand/' }
   ]
 };
 
@@ -568,7 +604,14 @@ const BRAND_PERSONAS = [
     hashtags:['#AeraGlows','#SkinArmor','#FreshCeramide'],
     tagline:'Sweat is just weakness leaving the body, but it shouldn’t wreck your skin barrier.',
     contentFocus:['Brand trust and proof','Emotional'],
-    eeatPillar:'Experience'
+    eeatPillar:'Experience',
+    marketProfile:{
+      lifestyle:'Outdoors most of the day, trains twice daily, travels for races. Time-poor — anything that takes over 5 minutes morning or night gets skipped.',
+      skincareRegime:'Minimal: cleanser, one multi-purpose barrier product, SPF. Abandons anything with a visible-results wait longer than 2-3 weeks.',
+      priceSensitivity:'Will pay a premium for a product she trusts, but needs proof fast — a slow-to-show hero product loses her before it converts her.',
+      purchaseDrivers:'Peer/teammate recommendation, visible before/after on someone with a similar lifestyle, no-fuss routine.',
+      channelHabits:'TikTok for raw discovery, rarely reads long PDP copy — decides off video proof.'
+    }
   },
   {
     id:'kaia',
@@ -587,7 +630,14 @@ const BRAND_PERSONAS = [
     hashtags:['#KaiaShines','#GlassSkin'],
     tagline:'The best filter is a flawless skin barrier.',
     contentFocus:['Brand trust and proof','Educational'],
-    eeatPillar:'Trustworthiness'
+    eeatPillar:'Trustworthiness',
+    marketProfile:{
+      lifestyle:'Entertainment-industry schedule — rehearsals, auditions, late-night edits under harsh lighting. Image is professional stakes, not vanity.',
+      skincareRegime:'Multi-step routine, chases whatever\'s trending, but repeat-buys only what visibly survives heavy makeup and stage lighting.',
+      priceSensitivity:'Bundle and gift-set responsive — will try a new brand off a low-commitment sample size before a full-size buy.',
+      purchaseDrivers:'Creator/influencer endorsement, aesthetic packaging, glass-skin proof under real lighting conditions.',
+      channelHabits:'TikTok trends and Instagram mood boards; highly influenced by whoever she already follows.'
+    }
   },
   {
     id:'mira',
@@ -606,8 +656,26 @@ const BRAND_PERSONAS = [
     hashtags:['#IngredientHonesty','#FormulationFacts'],
     tagline:'I’ve read the study. Let’s see if the marketing matches it.',
     contentFocus:['Educational','Brand trust and proof'],
-    eeatPillar:'Expertise'
+    eeatPillar:'Expertise',
+    marketProfile:{
+      lifestyle:'Deliberate, research-first buyer. Reads INCI lists before checkout, cross-checks brand claims against published studies.',
+      skincareRegime:'Targeted regime built around her own patch-test history — combination/mild-acne skin, cautious about actives that conflict.',
+      priceSensitivity:'Will pay for verified formulation quality; actively distrusts price used as a quality signal on its own.',
+      purchaseDrivers:'Ingredient transparency, third-party or published proof, a brand\'s willingness to admit what it can\'t yet prove.',
+      channelHabits:'Long-form YouTube/TikTok reviews; the audience most likely to publicly call out an unproven claim.'
+    }
   }
+];
+
+/* ── Starter questions for the Market personas interview tool — examples
+   only, meant to seed a real question, not exhaustive. Kept generic so
+   they don't imply a claim or finding that hasn't actually been researched. */
+const PERSONA_QUESTION_STARTERS = [
+  'Would you switch from your current brand to d.nuvo if it claimed deeper barrier repair but cost 20% more?',
+  'What would make you distrust a ceramide or barrier-repair claim from a brand you hadn\'t heard of before?',
+  'Between a bundle discount and a free hero-product sample, which gets you to try an unfamiliar skincare brand?',
+  'What do you check before buying skincare from a livestream or short-video ad versus a marketplace listing?',
+  'What is the one thing a competitor in this category does that you wish d.nuvo did too?'
 ];
 
 /* ── Content formats the prompt builder can target ── */
@@ -625,6 +693,7 @@ const MODULE_CATALOG = [
   { id:'brandpulse', name:'Brand pulse',       view:'brandpulse', role:'All roles', defaultOn:true },
   { id:'pricing',    name:'SKU pricing',       view:'pricing',    role:'Admin + planning', defaultOn:true },
   { id:'media',      name:'Media plan',        view:'media',      role:'Media planner', defaultOn:true },
+  { id:'personas',   name:'Market personas',   view:'personas',   role:'Content + Media planner', defaultOn:true },
   { id:'kol',        name:'KOL hub',           view:'kol',        role:'Social / KOL manager', defaultOn:true },
   { id:'content',    name:'Content module',    view:'content',    role:'Content creative manager', defaultOn:true },
   { id:'events',     name:'Retail and events', view:'events',     role:'Event and retail lead', defaultOn:true },

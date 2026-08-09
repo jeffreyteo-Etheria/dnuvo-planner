@@ -101,6 +101,7 @@
       <button class="nav-i"      data-view="pricing"  data-acl="all">Pricing</button>
       <button class="nav-i"      data-view="media"    data-acl="all">Media plan</button>
       <button class="nav-i"      data-view="expansion" data-acl="all">MY/TH expansion</button>
+      <button class="nav-i"      data-view="personas" data-acl="all">Market personas</button>
 
       <div class="nav-group">Execute</div>
       <button class="nav-i"      data-view="kol"      data-acl="all">KOL hub</button>
@@ -339,8 +340,13 @@
         <div class="p-h">
           <h3>Budget engine</h3>
           <span class="p-note">flat M1–M3, then 30% of prior month's revenue</span>
+          <div class="sched-view-toggle">
+            <button class="btn-line sm on" id="budgetViewAll">All months</button>
+            <button class="btn-line sm" id="budgetViewMonth">Selected month</button>
+          </div>
         </div>
         <div class="tb-wrap"><table class="tb" id="budgetTable"></table></div>
+        <div class="hint-bar" id="monthKpiFocus" hidden></div>
         <div class="hint-bar" id="goalCheck"></div>
       </div>
 
@@ -350,6 +356,12 @@
           <span class="p-note">for the month selected above — reacts to promo periods tagged in Campaign setup</span>
         </div>
         <div id="splitSuggestion"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Persona research inputs</h3>
+          <span class="p-note">answers from Market personas routed here — <b>Market personas</b> tab to add more</span></div>
+        <div id="personaFindingsMedia"></div>
       </div>
 
       <div class="panel">
@@ -392,8 +404,72 @@
       </div>
 
       <div class="panel">
+        <div class="p-h"><h3>Research leads</h3>
+          <span class="p-note">real, web-sourced regulatory/CNH-agent firms to vet — not a vetted or engaged contact; add one to the candidates table above once your team verifies it</span></div>
+        <div id="expLeads"></div>
+      </div>
+
+      <div class="panel">
         <div class="p-h"><h3>SKU and bundle fit</h3><span class="p-note">starting recommendation — edit freely</span></div>
         <div id="expSkuFit"></div>
+      </div>
+
+    </section>
+
+    <!-- ═══════ MARKET PERSONAS ═══════ -->
+    <section class="view" data-view="personas">
+
+      <p class="fh" style="margin:0 0 12px">Three synthetic personas — a fast, no-cost proxy for pressure-testing
+        messaging, positioning and competitor reaction before spending on real primary research or paid media.
+        Answers are directional and qualitative, not verified consumer data — treat them as a signal to test,
+        never as a sourced claim. Same three characters as <b>Content → Brand persona</b>, reused here as a
+        consumer-research lens rather than an image/video ambassador.</p>
+
+      <div class="panel">
+        <div class="p-h"><h3>Personas</h3><span class="p-note">lifestyle, regime and choice drivers behind each interview</span></div>
+        <div id="mktPersonaCards"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Interview a persona</h3>
+          <span class="p-note">build a role-play prompt, run it in Perplexity/ChatGPT/your tool, then log the answer below</span></div>
+        <div class="research">
+          <div class="res-row">
+            <select id="mpPersona"></select>
+            <select id="mpStarter"><option value="">— or pick a starter question —</option></select>
+          </div>
+          <div class="res-row">
+            <input id="mpQuestion" placeholder="Ask a critical question — competitor behavior, trends, what would change their mind…">
+            <button class="btn-solid" id="mpBuildBtn">Build prompt</button>
+          </div>
+          <div class="prompt-out" id="mpPromptOut" hidden>
+            <div class="po-h"><span>Paste this into your AI research tool</span>
+              <button class="btn-line sm" id="mpCopyBtn">Copy</button></div>
+            <pre id="mpPromptText"></pre>
+            <div class="po-warn"><b>Directional only.</b> This is a synthetic-persona role-play, not real consumer
+              data. Log the answer as a qualitative signal to test, not a sourced fact.</div>
+            <div class="ai-tool-row">
+              <span class="p-note">Copies the prompt, then opens the tool in a new tab — no API keys are stored here</span>
+              <button class="btn-line sm" id="mpOpenPerplexity">Open Perplexity</button>
+              <button class="btn-line sm" id="mpOpenChatgpt">Open ChatGPT</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Answer log</h3><span class="p-note">paste back what the persona said, then route it to the team that should act on it</span></div>
+        <div class="mf"><label>Answer</label>
+          <textarea id="mpAnswer" rows="3" placeholder="Paste the AI's answer here…"></textarea></div>
+        <div class="res-row">
+          <select id="mpDest">
+            <option value="log">Log only</option>
+            <option value="content">Send to Content strategy</option>
+            <option value="media">Send to Media plan</option>
+          </select>
+          <button class="btn-solid" id="mpSaveBtn">Save answer</button>
+        </div>
+        <div class="tb-wrap" style="margin-top:12px"><table class="tb" id="mpAnswerTable"></table></div>
       </div>
 
     </section>
@@ -503,13 +579,14 @@
 
         <div class="panel">
           <div class="p-h"><h3>Schedule</h3>
-            <span class="p-note">deliverables and live sessions</span>
+            <span class="p-note">the full record of past and present KOL activity — always kept, filter to change the view</span>
             <div class="sched-view-toggle">
               <button class="btn-line sm on" id="schedViewTable">Table</button>
               <button class="btn-line sm" id="schedViewBoard">Board</button>
               <button class="btn-line sm" id="schedViewCal">Booking calendar</button>
             </div>
             <button class="btn-line sm" id="schedAllIcs">Download all as calendar</button></div>
+          <div id="kolActivityTopline"></div>
           <div id="kolSched"></div>
           <div id="kolSchedBoard" hidden></div>
           <div id="kolSchedCal" hidden></div>
@@ -555,6 +632,12 @@
       <div class="panel">
         <div class="p-h"><h3>Brand persona</h3><span class="p-note">pre-set characters — locked so every generation stays recognizable</span></div>
         <div id="personaCards"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Persona research inputs</h3>
+          <span class="p-note">answers from Market personas routed here — <b>Market personas</b> tab to add more</span></div>
+        <div id="personaFindingsContent"></div>
       </div>
 
       <div class="panel">
@@ -768,6 +851,7 @@
 <script src="proposals.js"></script>
 <script src="app.js"></script>
 <script src="kol.js"></script>
+<script src="personas.js"></script>
 <script src="sessions.js"></script>
 <script src="ui.js"></script>
 </body>

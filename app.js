@@ -46,6 +46,8 @@ function normalizeState(obj){
   s.expansion = s.expansion || {};
   s.expansion.checklist = s.expansion.checklist || {};
   s.expansion.distributors = s.expansion.distributors || [];
+  s.personas = s.personas || {};
+  s.personas.answers = s.personas.answers || [];
   s.expansion.skuFit = s.expansion.skuFit || {
     malaysia: 'Barrier-repair/ceramide story matches Malaysia\'s premium-import positioning. Lead with the Hero Repair Duo; consider a CNY gift-set bundle for the Chinese-Malaysian segment.',
     thailand: 'Thailand skincare is trending toward "science-based, skin-health" positioning — direct match for d.nuvo\'s barrier-repair claims. Lead with the same hero SKU; no repositioning needed.'
@@ -1115,6 +1117,29 @@ function renderSim(){
 }
 
 /* ═══════════ MEDIA ═══════════ */
+let budgetTableView = 'all';
+
+/* Shared with Reporting's Monthly actuals table (renderReport) so an actual
+   entered from either place is the same field, not a duplicate source of
+   truth. Returns false (and leaves S.actuals untouched) if a gate field
+   doesn't parse as a number. */
+function saveActualField(monthKey, field, raw){
+  const gateFields = ['reviews','rating','roas','pool','buyers'];
+  if(raw && gateFields.includes(field) && num(raw) === 0 && raw !== '0') return false;
+  S.actuals[monthKey] = S.actuals[monthKey] || {};
+  S.actuals[monthKey][field] = raw;
+  const last = Object.values(S.actuals).filter(a=>a.reviews||a.rating||a.roas||a.pool||a.buyers).pop();
+  if(last){
+    if(last.reviews) S.gates.reviews = num(last.reviews);
+    if(last.rating)  S.gates.rating  = num(last.rating);
+    if(last.roas)    S.gates.roas    = num(last.roas);
+    if(last.pool)    S.gates.pool    = num(last.pool);
+    if(last.buyers)  S.gates.buyers  = num(last.buyers);
+  }
+  save();
+  return true;
+}
+
 function renderMedia(){
   const B = computeBudget();
   const canEdit = isAdmin();
@@ -1135,28 +1160,69 @@ function renderMedia(){
       save();
       renderAlloc();
       renderSplitSuggestion();
+      if(budgetTableView === 'month') renderMedia();
       if(typeof renderKolBudgetDrilldown === 'function') renderKolBudgetDrilldown();
+      if(typeof renderKolActivityTopline === 'function') renderKolActivityTopline();
     }));
   }
 
+  const roasHead = budgetTableView === 'month' ? '<th class="n">Target ROAS</th><th class="n">Actual ROAS</th><th>Result</th>' : '';
+  const rowsSource = budgetTableView === 'month' ? [B[activeMonth]] : B;
   el('budgetTable').innerHTML = `<thead><tr><th>Month</th><th class="n">Units</th><th class="n">Avg price</th>
       <th class="n">Revenue</th>${canEdit?'<th class="n">Profit</th>':''}<th class="n">Budget</th>
-      ${chK.map(k=>`<th class="n">${CHAN_META[k].name}</th>`).join('')}</tr></thead><tbody>` +
-    B.map((b,i) => `<tr>
+      ${chK.map(k=>`<th class="n">${CHAN_META[k].name}</th>`).join('')}${roasHead}</tr></thead><tbody>` +
+    rowsSource.map((b,rowI) => {
+      const i = budgetTableView === 'month' ? activeMonth : rowI;
+      let roasCells = '';
+      if(budgetTableView === 'month'){
+        const target = targetRoasFor(i);
+        const actualRaw = (S.actuals[b.k]||{}).roas || '';
+        const actualNum = num(actualRaw);
+        const result = !actualRaw ? `<span class="pill p-n">No data yet</span>`
+          : actualNum >= target ? `<span class="pill p-g">On track</span>`
+          : `<span class="pill p-r">Behind</span>`;
+        roasCells = `<td class="n">${target.toFixed(2)}×</td>
+          <td class="n"><span class="ed" contenteditable="true" data-actroas="${b.k}">${esc(actualRaw)}</span></td>
+          <td>${result}</td>`;
+      }
+      return `<tr>
       <td><b>${b.label}</b></td>
       <td class="n">${cell('month', b.k, 'units', b.units, b.label + ' — units target')}</td>
       <td class="n">${cell('month', b.k, 'price', b.price, b.label + ' — average price', {prefix:S.settings.cur})}</td>
       <td class="n">${cur(b.rev)}</td>
       ${canEdit?`<td class="n">${cur(b.profit)}</td>`:''}
       <td class="n"><b style="color:var(--violet)">${cur(b.budget)}</b></td>
-      ${chK.map(k=>`<td class="n">${b.ch[k]?cur(b.ch[k]):'—'}</td>`).join('')}</tr>`).join('') +
-    `<tr class="tot"><td>Total</td><td class="n">${B.reduce((a,b)=>a+b.units,0).toLocaleString()}</td><td class="n">—</td>
+      ${chK.map(k=>`<td class="n">${b.ch[k]?cur(b.ch[k]):'—'}</td>`).join('')}${roasCells}</tr>`;
+    }).join('') +
+    (budgetTableView === 'month' ? '' : `<tr class="tot"><td>Total</td><td class="n">${B.reduce((a,b)=>a+b.units,0).toLocaleString()}</td><td class="n">—</td>
       <td class="n">${cur(B.reduce((a,b)=>a+b.rev,0))}</td>
       ${canEdit?`<td class="n">${cur(B.reduce((a,b)=>a+b.profit,0))}</td>`:''}
       <td class="n">${cur(B.reduce((a,b)=>a+b.budget,0))}</td>
-      ${chK.map(k=>`<td class="n">${cur(B.reduce((a,b)=>a+(b.ch[k]||0),0))}</td>`).join('')}</tr></tbody>`;
+      ${chK.map(k=>`<td class="n">${cur(B.reduce((a,b)=>a+(b.ch[k]||0),0))}</td>`).join('')}</tr>`) + `</tbody>`;
 
   wireCells();
+  qsa('[data-actroas]').forEach(c => c.addEventListener('blur', () => {
+    const k = c.dataset.actroas;
+    const raw = c.textContent.trim();
+    if(!saveActualField(k, 'roas', raw)){
+      toast(`"${raw}" doesn't look like a number — actual ROAS was not saved`);
+      c.textContent = (S.actuals[k]||{}).roas || '';
+      return;
+    }
+    renderRail(); renderOverview(); renderMedia();
+  }));
+
+  const kpiBox = el('monthKpiFocus');
+  if(kpiBox){
+    if(budgetTableView === 'month'){
+      const m = MONTHS[activeMonth];
+      kpiBox.hidden = false;
+      kpiBox.className = 'hint-bar';
+      kpiBox.innerHTML = `<b>${esc(m.label)} focus.</b> ${esc(m.media)} ${m.kolWork ? '— ' + esc(m.kolWork) : ''}`;
+    } else {
+      kpiBox.hidden = true;
+    }
+  }
 
   const tU = B.reduce((a,b)=>a+b.units,0), goal = S.settings.goalUnits;
   const tB = B.reduce((a,b)=>a+b.budget,0), tR = B.reduce((a,b)=>a+b.rev,0);
@@ -1184,7 +1250,9 @@ function renderMedia(){
       qsa('[data-mf]').forEach(x => x.classList.toggle('on', +x.dataset.mf === S.mediaFocus));
       renderAlloc();
       renderSplitSuggestion();
+      if(budgetTableView === 'month') renderMedia();
       if(typeof renderKolBudgetDrilldown === 'function') renderKolBudgetDrilldown();
+      if(typeof renderKolActivityTopline === 'function') renderKolActivityTopline();
     });
   }
   renderAlloc();
@@ -1198,6 +1266,17 @@ function renderMedia(){
       <div class="cb-b"><dl>${c.rows.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div></div>`).join('');
   qsa('.cb-h').forEach(h => h.addEventListener('click', () => h.parentElement.classList.toggle('open')));
 }
+
+const budgetViewAllBtn = el('budgetViewAll');
+const budgetViewMonthBtn = el('budgetViewMonth');
+function setBudgetTableView(v){
+  budgetTableView = v;
+  if(budgetViewAllBtn) budgetViewAllBtn.classList.toggle('on', v === 'all');
+  if(budgetViewMonthBtn) budgetViewMonthBtn.classList.toggle('on', v === 'month');
+  renderMedia();
+}
+if(budgetViewAllBtn) budgetViewAllBtn.addEventListener('click', () => setBudgetTableView('all'));
+if(budgetViewMonthBtn) budgetViewMonthBtn.addEventListener('click', () => setBudgetTableView('month'));
 
 function renderSplitSuggestion(){
   const box = el('splitSuggestion'); if(!box) return;
@@ -1256,7 +1335,9 @@ function renderExpansion(){
           const checked = !!S.expansion.checklist[id];
           return `<label class="ck" title="${esc(item.why)}">
             <input type="checkbox" data-expck="${id}"${checked?' checked':''}${isAdmin()?'':' disabled'}>
-            <span>${esc(item.label)}</span></label>`;
+            <span>${esc(item.label)}</span></label>${item.url
+              ? ` <a href="${esc(item.url)}" target="_blank" rel="noopener" class="k-handle-link" style="font-size:11px">Source</a>`
+              : ''}`;
         }).join('')}
       </div>`;
     }).join('');
@@ -1301,6 +1382,20 @@ function renderExpansion(){
       S.expansion.distributors.push({ name:'', market:'malaysia', contact:'', status:'Researching', notes:'' });
       save(); renderExpansion();
     };
+  }
+
+  const leadsBox = el('expLeads');
+  if(leadsBox){
+    leadsBox.innerHTML = `<div class="promo-grid">${Object.keys(EXPANSION_LEADS).map(mk => {
+      const marketName = (EXPANSION_MARKETS.find(m=>m.k===mk)||{}).name || mk;
+      return EXPANSION_LEADS[mk].map(lead => `
+        <div class="promo-card">
+          <span>${esc(marketName)}</span><b>${esc(lead.name)}</b>
+          <p>${esc(lead.role)}</p>
+          <p style="font-size:11px;color:var(--faint);margin-top:6px">
+            <a href="${esc(lead.url)}" target="_blank" rel="noopener" class="k-handle-link">Source</a></p>
+        </div>`).join('');
+    }).join('')}</div>`;
   }
 
   const fitBox = el('expSkuFit');
@@ -1880,26 +1975,13 @@ function renderReport(){
   qsa('[data-act]').forEach(c => c.addEventListener('blur', () => {
     const k = c.dataset.act, field = c.dataset.f;
     const raw = c.textContent.trim();
-    // A gate-driving field that doesn't parse as a number would silently zero
-    // that gate out — reject it instead of saving garbage.
-    const gateFields = ['reviews','rating','roas','pool','buyers'];
-    if(raw && gateFields.includes(field) && num(raw) === 0 && raw !== '0'){
+    if(!saveActualField(k, field, raw)){
       toast(`"${raw}" doesn't look like a number — ${field} actual was not saved`);
       c.textContent = (S.actuals[k]||{})[field] || '';
       return;
     }
-    S.actuals[k] = S.actuals[k] || {};
-    S.actuals[k][field] = raw;
-    // latest actuals feed the gate rail
-    const last = Object.values(S.actuals).filter(a=>a.reviews||a.rating||a.roas||a.pool||a.buyers).pop();
-    if(last){
-      if(last.reviews) S.gates.reviews = num(last.reviews);
-      if(last.rating)  S.gates.rating  = num(last.rating);
-      if(last.roas)    S.gates.roas    = num(last.roas);
-      if(last.pool)    S.gates.pool    = num(last.pool);
-      if(last.buyers)  S.gates.buyers  = num(last.buyers);
-    }
-    save(); renderRail(); renderOverview();
+    renderRail(); renderOverview();
+    if(typeof renderMedia === 'function' && budgetTableView === 'month') renderMedia();
   }));
 
   el('kpiTable').innerHTML = `<thead><tr><th>Metric</th><th>Target</th><th>Where to read it</th>
@@ -1965,6 +2047,7 @@ el('restoreFile').addEventListener('change', e => {
 function renderAll(){
   renderRail(); renderOverview(); renderStrategy(); renderPricing();
   renderBrandPulse(); renderMedia(); renderExpansion(); renderContentModule(); renderEvents(); renderCalendar(); renderApprovals(); renderReport(); renderAiStrategy();
+  if(typeof renderPersonas === 'function') renderPersonas();
   applyModuleVisibility();
   if(typeof renderProposals === 'function') renderProposals();
   // tables are rebuilt on each render, so re-attach sorting and download menus
