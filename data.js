@@ -689,16 +689,32 @@ const BRAND_PERSONAS = [
   }
 ];
 
-/* ── Starter questions for the Market personas interview tool — examples
-   only, meant to seed a real question, not exhaustive. Kept generic so
-   they don't imply a claim or finding that hasn't actually been researched. */
-const PERSONA_QUESTION_STARTERS = [
-  'Would you switch from your current brand to d.nuvo if it claimed deeper barrier repair but cost 20% more?',
-  'What would make you distrust a ceramide or barrier-repair claim from a brand you hadn\'t heard of before?',
-  'Between a bundle discount and a free hero-product sample, which gets you to try an unfamiliar skincare brand?',
-  'What do you check before buying skincare from a livestream or short-video ad versus a marketplace listing?',
-  'What is the one thing a competitor in this category does that you wish d.nuvo did too?'
-];
+/* ── Starter questions for the Market personas interview tool — one set
+   per persona (not generic/shared), each aimed at surfacing a content or
+   marketing-positioning decision specifically, in that persona's own
+   lifestyle/decision pattern. Examples to seed a real question, not
+   exhaustive, and not a claim or finding that's actually been researched
+   until an answer is logged. */
+const PERSONA_QUESTION_STARTERS = {
+  aera: [
+    'Between "sweat-proof barrier protection" and "a ceramide delivery system built for absorption plus repair," which phrase actually makes you want to try this — and why does the other one fall flat for you?',
+    'You see this brand on TikTok mid-scroll during a workout break — what stops your thumb in the first 3 seconds, versus what makes you keep scrolling?',
+    'What would make you trust a claim about skin performing better under sweat and friction, without a lab report in front of you?',
+    'Compared to how CeraVe or Cetaphil talk to someone like you, what is missing from d.nuvo\'s message right now?'
+  ],
+  kaia: [
+    'What is the difference between a skincare ad that feels like "an ad" and one that feels like a real recommendation from someone you already follow?',
+    'Would a gift-set or bundle framing get you to try d.nuvo faster than a single hero product — and what would the packaging or story need to look like?',
+    'What proof — a before/after, a demo, an ingredient callout — would make you believe "glass skin under stage lighting" is real and not just filtered?',
+    'What trend right now (a sound, a format, a challenge) would make d.nuvo\'s content feel current to you instead of dated?'
+  ],
+  mira: [
+    'What specific piece of proof — a study, a before/after, an ingredient breakdown — would stop you from assuming a "ceramide delivery system" claim is marketing fluff?',
+    'If d.nuvo cannot yet show a validated number for "deeper absorption," what non-numeric language would still earn your trust versus make you roll your eyes?',
+    'What is a claim a competitor in this category makes that you would call out as overreach — and what should d.nuvo avoid to not repeat that mistake?',
+    'Between a brand admitting a limitation and a brand overselling, which makes you more likely to actually buy — and why?'
+  ]
+};
 
 /* ── Content formats the prompt builder can target ── */
 const CONTENT_FORMATS = [

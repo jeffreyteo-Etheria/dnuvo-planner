@@ -11,11 +11,22 @@
    verified consumer data — never a sourced claim.
    ════════════════════════════════════════════════ */
 
+/* d.nuvo's approved messaging stack (CLAUDE.md) — included in every prompt
+   so the persona reacts to what the brand actually says, and any content/
+   marketing-angle suggestion it produces stays inside approved claims
+   rather than freelancing a new one. */
+const DNUVO_MESSAGING_STACK = [
+  'Emotional: "Your skin deserves ingredients that go deeper."',
+  'Educational: "Stop moisturizing the surface. Start feeding the layers."',
+  'Credibility: a patented delivery system — described in mechanism terms, not with an unapproved number.',
+  'Differentiation: a ceramide delivery system designed for absorption plus repair.'
+].join('\n');
+
 function buildPersonaInterviewPrompt(personaId, question){
   const p = BRAND_PERSONAS.find(x => x.id === personaId) || BRAND_PERSONAS[0];
   const mp = p.marketProfile || {};
   const q = (question || '').trim() || 'What would make you switch to a new skincare brand?';
-  return `ROLE-PLAY BRIEF — answer AS this synthetic consumer persona, not as an AI assistant. This is qualitative proxy research to pressure-test messaging and positioning before real primary research or paid media spend — be honest and critical, do not flatter the brand.
+  return `ROLE-PLAY BRIEF — answer AS this synthetic consumer persona, not as an AI assistant. Purpose: surface a real-world-plausible reaction that a marketing or content team can act on — which angle to lead with, which claim to drop, which trend actually lands with this person. This is qualitative proxy research to pressure-test messaging and positioning before real primary research or paid media spend — be honest and critical, do not flatter the brand.
 
 PERSONA
 Name: ${p.name} — "${p.archetype}"
@@ -31,14 +42,30 @@ Voice: ${p.tone}
 BRAND BEING TESTED
 d.nuvo — ceramide/barrier-repair skincare, masstige pricing, competing against CeraVe, Cetaphil, COSRX, CERADAN, ILLIYOON and Suu Balm.
 
+d.nuvo's approved messaging stack — react to these specific lines, don't invent a new claim to react to:
+${DNUVO_MESSAGING_STACK}
+
 QUESTION TO ANSWER IN CHARACTER
 "${q}"
 
 RULES
 - Answer only as ${p.name} would — her lifestyle, budget and skepticism, not a generic "ideal customer."
-- Be critical where a real consumer would be. Do not invent specific statistics, study results or competitor claims — describe reactions and preferences, not manufactured data.
+- Be critical where a real consumer would be, reflecting how someone like her actually behaves and talks online today — not an idealized customer.
+- Ground the answer in the facts given above (her profile, the approved messaging stack) — do not invent specific statistics, study results, or competitor claims that weren't stated. If a claim above is unproven, react to it as unproven, in character.
+- Close with one line naming the specific content or marketing angle (a hook, a proof point, a format) that this answer suggests — that's the part a marketer will act on.
 - If you would genuinely be unsure or need more information before deciding, say so — that is a useful answer too.
 - Keep the answer to a few honest paragraphs, not a marketing pitch.`;
+}
+
+/* Starter questions are per-persona (PERSONA_QUESTION_STARTERS, data.js),
+   not a shared generic list — each set is written to that persona's own
+   decision pattern, so refresh the options whenever the persona changes. */
+function renderPersonaStarters(){
+  const starterSel = el('mpStarter'); if(!starterSel) return;
+  const personaId = (el('mpPersona')||{}).value || BRAND_PERSONAS[0].id;
+  const list = PERSONA_QUESTION_STARTERS[personaId] || [];
+  starterSel.innerHTML = `<option value="">— or pick a starter question —</option>` +
+    list.map(q => `<option value="${esc(q)}">${esc(q)}</option>`).join('');
 }
 
 function renderPersonas(){
@@ -62,10 +89,7 @@ function renderPersonas(){
   if(personaSel && !personaSel.options.length){
     personaSel.innerHTML = BRAND_PERSONAS.map(p => `<option value="${p.id}">${esc(p.name)} — ${esc(p.archetype)}</option>`).join('');
   }
-  const starterSel = el('mpStarter');
-  if(starterSel && starterSel.options.length <= 1){
-    starterSel.innerHTML += PERSONA_QUESTION_STARTERS.map(q => `<option value="${esc(q)}">${esc(q)}</option>`).join('');
-  }
+  renderPersonaStarters();
 
   renderPersonaAnswerTable();
   renderPersonaFindings('content', 'personaFindingsContent');
@@ -110,6 +134,11 @@ function renderPersonaFindings(dest, elId){
 const mpStarterSel = el('mpStarter');
 if(mpStarterSel) mpStarterSel.addEventListener('change', () => {
   if(mpStarterSel.value) el('mpQuestion').value = mpStarterSel.value;
+});
+const mpPersonaSel = el('mpPersona');
+if(mpPersonaSel) mpPersonaSel.addEventListener('change', () => {
+  renderPersonaStarters();
+  el('mpQuestion').value = '';
 });
 const mpBuildBtn = el('mpBuildBtn');
 if(mpBuildBtn) mpBuildBtn.addEventListener('click', () => {
