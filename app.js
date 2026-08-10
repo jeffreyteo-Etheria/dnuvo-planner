@@ -61,8 +61,8 @@ function normalizeState(obj){
     eye:   { shopify: { price: 29, checkedAt: '2026-08-09' } }
   };
   s.expansion.skuFit = s.expansion.skuFit || {
-    malaysia: 'Barrier-repair/ceramide story matches Malaysia\'s premium-import positioning. Lead with the Hero Repair Duo; consider a CNY gift-set bundle for the Chinese-Malaysian segment.',
-    thailand: 'Thailand skincare is trending toward "science-based, skin-health" positioning — direct match for d.nuvo\'s barrier-repair claims. Lead with the same hero SKU; no repositioning needed.'
+    malaysia: 'Lead with the Vitamin C Ampoule (Hero SKU) inside the Hero Repair Duo bundle — Malaysia\'s premium-import positioning rewards one recognizable hero + bundle story over a wide catalog launch. Add a CNY gift-set built from the Full Ritual Set for the Chinese-Malaysian segment, and a Merdeka/Malaysia Day bundle push in Aug–Sep (see Recommended 2026 events below). Pricing factors: NPRA notification (RM50/SKU, ~3–4 weeks) and the CNH/agent fee are fixed per-SKU costs, so bundles amortize that cost better than adding new single SKUs. Price in MYR at a premium-import multiple of the SGD price — do not discount to "local" pricing, which would contradict the import-hub positioning that\'s already working here.',
+    thailand: 'Lead with the same hero SKU (Vitamin C Ampoule) — no repositioning needed, since Thailand\'s shift toward "science-based, skin-health" claims is a direct match for the existing barrier-repair story. Pair the Water Cream and Sun Serum into a Songkran-timed after-sun barrier-repair bundle (13–15 Apr 2026 — Thailand\'s hottest sun-exposure season, a genuine seasonal hook here, not just a gifting tie-in). Pricing factors: Thai FDA notification requires a local agent to hold the certificate (3-year validity) — same fixed-cost-per-SKU logic as Malaysia, favor bundles. Price in THB — Thailand\'s mass-to-prestige skincare gap is wider than Singapore\'s, so validate d.nuvo\'s masstige tier against a real local competitor set rather than a simple SGD conversion.'
   };
   // A plan saved before shipping/handling existed won't have them on each
   // SKU — backfill rather than let the floor formula read undefined as 0
@@ -70,6 +70,13 @@ function normalizeState(obj){
   s.skus.forEach(sk => {
     if(sk.shipping == null) sk.shipping = 0;
     if(sk.handling == null) sk.handling = 0;
+    // Real handles verified directly against shop.dnuvo.com.sg — only
+    // backfilled when still blank, so it never overwrites a handle the
+    // team already set themselves.
+    if(!sk.handle){
+      const def = SKUS.find(x => x.id === sk.id);
+      if(def && def.handle) sk.handle = def.handle;
+    }
   });
   s.settings.platformFees = Object.assign({}, PLATFORM_FEES, s.settings.platformFees || {});
   s.settings.promoDiscounts = Object.assign(
@@ -586,20 +593,19 @@ function renderBrandPulse(){
       return Math.max(1, Math.min(5, score));
     };
 
-    const fitDisabled = isAdmin() ? '' : ' disabled';
     personas.innerHTML = `
       <div class="pf-ctl">
-        ${isAdmin() ? '' : `<p class="fh" style="grid-column:1/-1">Set by an administrator — these three sliders tune the fit score for every persona below.</p>`}
+        <p class="fh" style="grid-column:1/-1">These three sliders tune the fit score for every persona below — anyone on the team can adjust them as campaign readiness changes.</p>
         <label>Brand awareness strength
-          <input type="range" id="pfAw" min="1" max="5" value="${fit.awareness}"${fitDisabled}>
+          <input type="range" id="pfAw" min="1" max="5" value="${fit.awareness}">
           <span id="pfAwV">${fit.awareness}/5</span>
         </label>
         <label>Conversion readiness
-          <input type="range" id="pfCv" min="1" max="5" value="${fit.conversion}"${fitDisabled}>
+          <input type="range" id="pfCv" min="1" max="5" value="${fit.conversion}">
           <span id="pfCvV">${fit.conversion}/5</span>
         </label>
         <label>Retention strength
-          <input type="range" id="pfRt" min="1" max="5" value="${fit.retention}"${fitDisabled}>
+          <input type="range" id="pfRt" min="1" max="5" value="${fit.retention}">
           <span id="pfRtV">${fit.retention}/5</span>
         </label>
       </div>
@@ -1063,8 +1069,10 @@ function renderPricing(){
 
   el('floorHint').className = 'hint-bar warn';
   el('floorHint').innerHTML = isAdmin()
-    ? `<b>Floor formula.</b> Cost × 2.5, grossed up for the ~16% marketplace commission, plus S$0.50 processing. Confirm real cost with the supplier before publishing any promotion.`
-    : `<b>Floor is already calculated.</b> Keep every promotion above the floor shown. If a planned discount breaks it, use the simulator below and request a change — an administrator will review it.`;
+    ? `<b>Floor formula.</b> (4×cost + shipping + handling) ÷ (1 − platform fee) — sized to leave 3×cost as profit after every cost is paid, on this column's Shopify-lead reference price. Confirm real cost, shipping and handling with the supplier before publishing any promotion.`
+    : `<b>Floor is already calculated.</b> It already accounts for cost, shipping, handling and platform fees — keep every promotion above the number shown. If a planned discount breaks it, use the simulator below and request a change — an administrator will review it.`;
+
+  renderKeySellFocus();
 
   el('bundleTable').innerHTML = `<thead><tr><th>Bundle</th><th>Contents</th><th>Tier</th>
       <th class="n">Price</th><th class="n">Sum of parts</th><th class="n">Saving</th><th>Where it is used</th></tr></thead><tbody>` +
@@ -1089,6 +1097,32 @@ function renderPricing(){
   if(typeof renderPromoGrid === 'function') renderPromoGrid();
   if(typeof renderPromoPriceTable === 'function') renderPromoPriceTable();
   renderSim();
+}
+
+/* Groups each SKU's existing `role`/`roleNote` into the 4 buckets a
+   marketer plans against (SELL_FOCUS_MAP, data.js) — doesn't invent a new
+   strategy, just names which SKU does what job and why, computed live so
+   it can't drift from the SKU price book above it. */
+function renderKeySellFocus(){
+  const box = el('keySellFocus'); if(!box) return;
+  const buckets = {};
+  S.skus.forEach(s => {
+    const map = SELL_FOCUS_MAP[s.role] || { bucket:'Unclassified', bucketWhy:'' };
+    buckets[map.bucket] = buckets[map.bucket] || { why: map.bucketWhy, items: [] };
+    const bundleNames = BUNDLES.filter(b => b.parts.includes(s.id)).map(b => b.name);
+    buckets[map.bucket].items.push({ sku: s, bundleNames });
+  });
+  const order = ['Hero — primary conversion', 'AOV / bundle driver', 'Value / entry', 'Upsell — existing buyers only'];
+  box.innerHTML = order.filter(b => buckets[b]).map(bucketName => {
+    const b = buckets[bucketName];
+    return `<div style="margin-bottom:16px">
+      <div style="margin-bottom:8px"><b style="font-size:13.5px">${esc(bucketName)}</b>
+        <span class="p-note" style="margin-left:8px">${esc(b.why)}</span></div>
+      <div class="bp-tactics">${b.items.map(({sku, bundleNames}) => `
+        <div class="bp-t"><b>${esc(sku.name)}</b><p>${esc(sku.roleNote)}${bundleNames.length ? ` <span style="color:var(--faint)">— in ${bundleNames.map(esc).join(', ')}</span>` : ''}</p></div>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function renderSim(){
@@ -1460,6 +1494,21 @@ function renderExpansion(){
     qsa('[data-expfit]').forEach(t => t.addEventListener('input', () => {
       S.expansion.skuFit[t.dataset.expfit] = t.value; save();
     }));
+  }
+
+  const eventsBox = el('expEvents');
+  if(eventsBox){
+    eventsBox.innerHTML = Object.keys(EXPANSION_EVENTS_2026).map(mk => {
+      const marketName = (EXPANSION_MARKETS.find(m=>m.k===mk)||{}).name || mk;
+      return `<div class="mf"><label style="text-transform:none;letter-spacing:0;font-size:13px;color:var(--ink)">${esc(marketName)}</label>
+        <div class="tb-wrap"><table class="tb">
+          <thead><tr><th>Window</th><th>2026 date</th><th>Why it fits d.nuvo</th></tr></thead>
+          <tbody>${EXPANSION_EVENTS_2026[mk].map(e => `<tr>
+            <td><b>${esc(e.name)}</b></td><td class="n">${esc(e.date)}</td><td style="color:var(--mute)">${esc(e.angle)}</td>
+          </tr>`).join('')}</tbody>
+        </table></div>
+      </div>`;
+    }).join('');
   }
 }
 

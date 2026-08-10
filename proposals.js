@@ -378,7 +378,62 @@ function shopfrontUrlFor(platformKey){
   return (S.settings.shopfrontLinks || {})[platformKey] || '';
 }
 
+/* Shopify's storefront JSON is public and CORS-open (verified against
+   shop.dnuvo.com.sg directly), so this is a real fetch, not a placeholder —
+   the only platform of the 4 with a feed like this. Matches each SKU/bundle
+   by its existing `handle` field (Shop links, above) rather than guessing
+   off product titles — anything without a handle set is reported as
+   unmatched instead of silently skipped. */
+async function pullLiveShopifyPrices(){
+  const statusBox = el('shopfrontPullStatus');
+  const setStatus = (msg, cls) => { if(statusBox){ statusBox.className = cls || ''; statusBox.textContent = msg; } };
+  const base = (S.settings.shopDomain || '').replace(/\/$/, '');
+  if(!base){ setStatus('Set the store domain in Shop links above first.', 'hint-bar bad'); return; }
+  setStatus(`Pulling live prices from ${base} …`);
+
+  let data;
+  try {
+    const res = await fetch(base + '/products.json?limit=250');
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    data = await res.json();
+  } catch(e){
+    setStatus(`Could not reach ${base} (${e.message}) — nothing was changed.`, 'hint-bar bad');
+    return;
+  }
+
+  const byHandle = {};
+  (data.products || []).forEach(p => { byHandle[p.handle] = p; });
+
+  const rows = [...S.skus.map(s => ({...s, kind:'sku'})), ...BUNDLES.map(bundleView).map(b => ({...b, kind:'bundle'}))];
+  const today = new Date().toISOString().slice(0,10);
+  let matched = 0;
+  const unmatched = [];
+  rows.forEach(r => {
+    const product = r.handle && byHandle[r.handle];
+    const variant = product && product.variants && product.variants[0];
+    if(!variant){ unmatched.push(r.name); return; }
+    S.shopfrontPrices[r.id] = S.shopfrontPrices[r.id] || {};
+    S.shopfrontPrices[r.id].shopify = { price: num(variant.price), checkedAt: today };
+    matched++;
+  });
+  save();
+  renderShopfrontPriceTable();
+  setStatus(
+    matched
+      ? `Pulled ${matched} live Shopify price${matched===1?'':'s'} just now.` +
+        (unmatched.length ? ` Not matched — set a handle in Shop links above first: ${unmatched.join(', ')}.` : '')
+      : `Reached the store but matched nothing — set each item's handle in Shop links above first.`,
+    matched ? 'hint-bar ok' : 'hint-bar warn'
+  );
+}
 function renderShopfrontLinks(){
+  // Wired lazily (not at module load) — this file loads before app.js
+  // defines el()/isAdmin(), so a top-level el() call here would throw.
+  const pullBtn = el('shopfrontPullBtn');
+  if(pullBtn){
+    pullBtn.hidden = !isAdmin();
+    if(!pullBtn._wired){ pullBtn._wired = true; pullBtn.addEventListener('click', pullLiveShopifyPrices); }
+  }
   const box = el('shopfrontLinks'); if(!box) return;
   box.innerHTML = `<div class="shop-head">` + SHOPFRONT_PLATFORMS.map(p => {
     const url = shopfrontUrlFor(p.k);

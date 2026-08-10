@@ -271,11 +271,17 @@
 
       <div class="panel">
         <div class="p-h"><h3>d.nuvo site audit</h3><span class="p-note">Shopee, TikTok Shop, Shopify input for strategy alignment</span></div>
+        <p class="fh" style="margin:0 0 12px">A self-rated health check on d.nuvo's own 3 storefronts (not competitors — see the tracker above for that).
+          Score each channel 1–5 against how well it's actually running today, note the top blocker, and log what to do about it.
+          These scores are what drive <b>Adaptive playbook tactics</b> below — a channel at 3 or under triggers an action there automatically.
+          Starting Issue/Recommendation text below is drawn from the existing Channel pricing logic playbook (Pricing tab) — check it against the live site and overwrite.</p>
         <div id="bpAudit"></div>
       </div>
 
       <div class="panel">
         <div class="p-h"><h3>Adaptive playbook tactics</h3><span class="p-note">actions generated from competitor and audit signals</span></div>
+        <p class="fh" style="margin:0 0 12px">Not written by hand — this list regenerates every time you change a site audit score above.
+          Any channel scored 3 or below gets an action here; it's flagged "Urgent" if that channel is also already drawing meaningful budget share or its KOL GPM is weak (see Media plan / KOL hub for those signals). Clear the audit issue and re-score to make the action disappear.</p>
         <div id="bpTactics"></div>
       </div>
     </section>
@@ -288,6 +294,14 @@
           <span class="p-note">one MSRP, three platform behaviours</span>
         </div>
         <div class="tiers" id="tierBox"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h">
+          <h3>Key sell focus</h3>
+          <span class="p-note">which SKU does which job, and why — computed from the price book's own role assignments below</span>
+        </div>
+        <div id="keySellFocus"></div>
       </div>
 
       <div class="panel">
@@ -323,8 +337,10 @@
       <div class="panel">
         <div class="p-h">
           <h3>Live shopfront pricing</h3>
-          <span class="p-note">what's actually listed on each of the 4 storefronts from linktr.ee/d.nuvo — logged manually and dated, not scraped</span>
+          <span class="p-note">Shopify pulls live from the real storefront; Shopee/Lazada/TikTok Shop are logged manually and dated — those platforms don't expose a public price feed</span>
+          <button class="btn-line sm" id="shopfrontPullBtn">Pull live Shopify prices</button>
         </div>
+        <div id="shopfrontPullStatus"></div>
         <div id="shopfrontLinks"></div>
         <div class="tb-wrap"><table class="tb" id="shopfrontPriceTable"></table></div>
         <div class="hint-bar" id="shopfrontNote"></div>
@@ -347,6 +363,10 @@
           <h3>Discount simulator</h3>
           <span class="p-note">check any promo against the floor before it goes live</span>
         </div>
+        <p class="fh" style="margin:0 0 12px">Pick a product, a platform and a discount — <b>Floor price</b> already factors in cost of goods,
+          shipping, handling and that platform's fee, sized so 3× cost is left over as profit. If <b>Customer pays</b> comes out
+          below the floor, the row turns red and shows exactly how far under — that gap is how much extra margin the discount
+          would need to give up to still be safe, not a hard cap on what you can propose.</p>
         <div class="sim" id="simBox"></div>
       </div>
     </section>
@@ -432,8 +452,13 @@
       </div>
 
       <div class="panel">
-        <div class="p-h"><h3>SKU and bundle fit</h3><span class="p-note">starting recommendation — edit freely</span></div>
+        <div class="p-h"><h3>SKU and bundle fit</h3><span class="p-note">which d.nuvo SKU/bundle to lead with, and the pricing factors behind it — starting recommendation, edit freely</span></div>
         <div id="expSkuFit"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Recommended 2026 events</h3><span class="p-note">checked against public holiday calendars — Hari Raya's exact date is moon-sighting dependent</span></div>
+        <div id="expEvents"></div>
       </div>
 
     </section>

@@ -60,22 +60,22 @@ const PROMO_PERIODS = [
 /* ── SKUs. cogs is admin-only; floor derives from it. ── */
 const SKUS = [
   { id:'vitc',  name:'Vitamin C Ampoule 15.5%', spec:'Fresh Ceramided™ · 18ml',
-    tier:'Core', msrp:56, sale:35, cogs:9,  shipping:0, handling:0, units:500, handle:'', url:'', urlOk:null,
+    tier:'Core', msrp:56, sale:35, cogs:9,  shipping:0, handling:0, units:500, handle:'vitamin-c-ampoule-15-5-brightening-serum', url:'', urlOk:null,
     role:'Hero', roleNote:'Anchors every Spark Ad and the Hero Repair Duo.' },
   { id:'water', name:'Water Cream 80ml', spec:'Fresh Ceramided™',
-    tier:'Core', msrp:51, sale:29, cogs:8,  shipping:0, handling:0, units:500, handle:'', url:'', urlOk:null,
+    tier:'Core', msrp:51, sale:29, cogs:8,  shipping:0, handling:0, units:500, handle:'fresh-ceramided-water-cream-80ml', url:'', urlOk:null,
     role:'Anchor', roleNote:'Bundle partner for the hero. High repeat rate.' },
   { id:'sun',   name:'Aqua C Sun Serum SPF50+', spec:'50ml',
-    tier:'Core', msrp:28, sale:19, cogs:5,  shipping:0, handling:0, units:500, handle:'', url:'', urlOk:null,
+    tier:'Core', msrp:28, sale:19, cogs:5,  shipping:0, handling:0, units:500, handle:'aqua-c-dual-sun-serum-spf50-pa4', url:'', urlOk:null,
     role:'Trial', roleNote:'Lowest barrier. Daily-use habit builds repurchase.' },
   { id:'toner', name:'Essential Toner 200ml', spec:'Fresh Ceramided™',
-    tier:'Entry', msrp:45, sale:25, cogs:6, shipping:0, handling:0, units:500, handle:'', url:'', urlOk:null,
+    tier:'Entry', msrp:45, sale:25, cogs:6, shipping:0, handling:0, units:500, handle:'fresh-ceramided-essential-toner-200ml', url:'', urlOk:null,
     role:'Cold entry', roleNote:'Editor\u2019s Pick trust signal for first purchase.' },
   { id:'calm',  name:'Trouble Calming Ampoule', spec:'ACZERO™ · 30ml',
-    tier:'Core', msrp:64, sale:39, cogs:10, shipping:0, handling:0, units:500, handle:'', url:'', urlOk:null,
+    tier:'Core', msrp:64, sale:39, cogs:10, shipping:0, handling:0, units:500, handle:'calming-ampoule-acne-prone-skin-30ml', url:'', urlOk:null,
     role:'Premium', roleNote:'Highest ASP. Acne and sensitive niche from M3.' },
   { id:'eye',   name:'Eye Cream 35ml', spec:'Fresh Ceramided™',
-    tier:'Core', msrp:56, sale:29, cogs:8,  shipping:0, handling:0, units:500, handle:'', url:'', urlOk:null,
+    tier:'Core', msrp:56, sale:29, cogs:8,  shipping:0, handling:0, units:500, handle:'fresh-ceramided-eye-cream-35ml', url:'', urlOk:null,
     role:'Upsell', roleNote:'Email add-on to past buyers. Never a cold-traffic lead.' }
 ];
 
@@ -99,6 +99,19 @@ const BUNDLES = [
     parts:['calm','water','sun'], price:79, handle:'', url:'', urlOk:null,
     stage:'Concern-led retargeting', note:'For the acne and sensitivity audience segment.' }
 ];
+
+/* ── Key sell focus — reframes each SKU's existing `role` (SKUS above,
+   set at launch) into the 4 buckets a marketer actually plans against.
+   Doesn't change any role, just groups them and states why in one line;
+   the "why" text still comes from each SKU's own roleNote. ── */
+const SELL_FOCUS_MAP = {
+  'Hero':       { bucket:'Hero — primary conversion', bucketWhy:'The lead story every ad and bundle points back to.' },
+  'Premium':    { bucket:'Hero — primary conversion', bucketWhy:'Highest-ASP hero for a specific concern niche, not the cold-traffic lead.' },
+  'Anchor':     { bucket:'AOV / bundle driver', bucketWhy:'Shows up across the most bundles — lifts average order value rather than leading on its own.' },
+  'Trial':      { bucket:'Value / entry', bucketWhy:'Lowest price barrier — earns the daily-use habit that drives repurchase.' },
+  'Cold entry': { bucket:'Value / entry', bucketWhy:'Trust signal for a first-time buyer who doesn’t know the brand yet.' },
+  'Upsell':     { bucket:'Upsell — existing buyers only', bucketWhy:'Never shown to cold traffic — an email add-on after trust is already established.' }
+};
 
 /* ── Live shopfront pricing — the 4 storefronts linked from linktr.ee/d.nuvo
    and given directly by the team. TikTok Shop has no confirmed storefront
@@ -262,6 +275,35 @@ const EXPANSION_LEADS = {
     { name:'REACH24H', role:'Cosmetic notification and regulatory registration agent', url:'https://en.reach24h.com/service/cosmetic/thailand-cosmetics-notification' },
     { name:'Emerhub', role:'Market-entry consultant, foreign-investor cosmetic registration guide', url:'https://emerhub.com/thailand/cosmetic-product-registration-in-thailand/' },
     { name:'Lex Bangkok', role:'Legal/regulatory firm handling Thai FDA cosmetic registration for foreign brands', url:'https://lexbangkok.com/thai-fda-registration-korean-cosmetic-brand/' }
+  ]
+};
+
+/* ── Recommended 2026 retail/cultural windows for MY/TH — checked against
+   public holiday calendars, not invented. Hari Raya is moon-sighting
+   dependent (Malaysia's government confirms it close to the date each
+   year) — flagged rather than stated as fixed. ── */
+const EXPANSION_EVENTS_2026 = {
+  malaysia: [
+    { name:'Chinese New Year', date:'17–18 Feb 2026 (public holiday; season runs into early March)',
+      angle:'The single biggest MY gifting moment for the Chinese-Malaysian segment — CNY gift-set bundle, red/gold packaging framing.' },
+    { name:'Hari Raya Aidilfitri', date:'Late Mar 2026 — exact date confirmed closer to the time by moon sighting',
+      angle:'Major gifting and shopping season for the Malay-Muslim segment — bundle and gift framing over discount depth.' },
+    { name:'Merdeka Day / Malaysia Day season', date:'31 Aug – 16 Sep 2026',
+      angle:'Patriotic national-pride retail season ("Merdeka Sale") — a good window for a value-tier bundle push.' },
+    { name:'Deepavali', date:'8–9 Nov 2026',
+      angle:'Gifting moment for the Malaysian-Indian segment, overlapping with the 11.11 lead-in.' },
+    { name:'11.11 / 12.12', date:'11 Nov / 12 Dec 2026',
+      angle:'Largest marketplace mega-sale days — same mechanic as Singapore, heaviest Shopee/TikTok weighting.' }
+  ],
+  thailand: [
+    { name:'Chinese New Year', date:'17–18 Feb 2026',
+      angle:'Also widely celebrated by Thailand\'s Thai-Chinese population — same gift-set logic as Malaysia.' },
+    { name:'Songkran (Thai New Year)', date:'13–15 Apr 2026',
+      angle:'Thailand\'s hottest sun-exposure season and biggest domestic travel holiday — a genuine seasonal hook for Sun Serum plus after-sun barrier repair, not just a generic gifting tie-in.' },
+    { name:'Loy Krathong', date:'7 Nov 2026',
+      angle:'Culturally significant gifting/beauty moment ahead of year-end — smaller than Songkran, still worth a light bundle push.' },
+    { name:'11.11 / 12.12', date:'11 Nov / 12 Dec 2026',
+      angle:'Largest marketplace mega-sale days, same as Malaysia and Singapore.' }
   ]
 };
 
@@ -741,10 +783,19 @@ const MODULE_CATALOG = [
 ];
 
 /* ── Site audit and strategy alignment defaults ── */
+/* Starting point drawn from the Channel pricing logic playbook already
+   authored elsewhere (CHAN_LOGIC) — verify against the real site and
+   overwrite; score stays neutral (3) until someone actually checks. */
 const SITE_AUDIT_TEMPLATE = {
-  shopee: { score:3, issue:'', recommendation:'' },
-  tiktok: { score:3, issue:'', recommendation:'' },
-  shopify:{ score:3, issue:'', recommendation:'' }
+  shopee: { score:3,
+    issue:'Listing price not yet confirmed to match Shopify MSRP — needs a manual check.',
+    recommendation:'Match Shopify MSRP on the listing. Run promos through the always-on S$5-off-S$40 voucher plus stacked mega-day vouchers (9.9/11.11/12.12), never a listing-price discount.' },
+  tiktok: { score:3,
+    issue:'No live-only bundle cadence confirmed running — hero SKU may be sitting at full price outside sessions.',
+    recommendation:'Schedule flash deals on the Vitamin C Ampoule inside live sessions only (2-hour window, announced 48h ahead). Keep the standing product-page price matched to Shopify and pull the flash price the moment the session ends.' },
+  shopify:{ score:3,
+    issue:'Full MSRP enforcement not yet confirmed — check for any live sitewide discount running.',
+    recommendation:'Hold full MSRP as the reference price every other channel respects. Use buy-2-save-10% and free-shipping-over-S$60 instead of a sitewide percentage sale, which resets the price anchor everywhere else.' }
 };
 
 const PROMO_ARCHITECTURE = [
