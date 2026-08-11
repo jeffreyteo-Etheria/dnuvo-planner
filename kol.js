@@ -3,8 +3,9 @@
    Two rosters, evaluated differently:
    UGC creators earn reviews. Livestream creators
    earn GMV — and are scored before any fee is set.
-   Approved and later records cannot be deleted by
-   the team; they are part of the record.
+   The full roster is visible to the team, and team
+   members can add and curate records at any stage —
+   but only an administrator can delete one.
    ════════════════════════════════════════════════ */
 
 let kolTab = 'ugc';
@@ -91,7 +92,7 @@ function isLocked(k){
   return !!(st && st.locked);
 }
 function canDelete(k){
-  return isAdmin() || !isLocked(k);
+  return isAdmin();
 }
 /* A creator can only be marked Complete once there's something to point to
    as proof — either on the record itself (for undated deliverables like a
@@ -273,7 +274,7 @@ function renderKolTable(){
       <button class="btn-line sm" data-sched="${i}">Schedule</button>
       <button class="btn-line sm" data-brief="${i}">Brief</button>
       ${del?`<button class="btn-line sm danger" data-del="${i}">Delete</button>`
-           :`<span class="lock-t" title="Approved and later records cannot be removed by the team">🔒</span>`}
+           :`<span class="lock-t" title="Only an administrator can delete a creator record">🔒</span>`}
     </div>`;
 
     if(kolTab === 'ugc'){
@@ -480,12 +481,11 @@ function delKol(idx){
   const k = S.kols[idx];
   if(!canDelete(k)){
     modal('This record cannot be removed', `<p style="font-size:13.5px;line-height:1.6;color:var(--mute)">
-      <b style="color:var(--ink)">${esc(k.handle)}</b> is at the
-      <b style="color:var(--ink)">${esc((KOL_PIPE.find(s=>s.k===k.stage)||{}).name)}</b> stage.</p>
+      <b style="color:var(--ink)">${esc(k.handle)}</b> can only be deleted by an administrator.</p>
       <p style="font-size:13px;color:var(--mute);margin-top:10px">
-      Once terms are approved, the record becomes part of the working history — spend, deliverables and
-      results are traced back to it. Team members can move it forward through the pipeline and mark it
-      complete or declined, but not delete it. Ask an administrator if it was created in error.</p>`,
+      Team members can add creators, edit their details, and move them through the pipeline, but
+      deletion is admin-only so a record can't be removed by mistake. Ask an administrator if this
+      one was created in error.</p>`,
       [['Close','x']], ()=>true);
     return;
   }
