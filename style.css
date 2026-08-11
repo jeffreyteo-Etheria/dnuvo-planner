@@ -387,10 +387,11 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
 .ps-c{font-family:var(--m);font-size:24px;font-weight:700;letter-spacing:-.03em;margin:3px 0 1px}
 .ps-d{font-size:11.5px;color:var(--mute);line-height:1.4}
 
-.warmth-filter{margin-top:10px}
+.warmth-filter{margin-top:10px;display:flex;align-items:center;flex-wrap:wrap;gap:10px}
 .warmth-filter label{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mute)}
 .warmth-filter select{border:1px solid var(--line);border-radius:6px;padding:6px 9px;font-size:12.5px;
   color:var(--ink-3);background:var(--panel)}
+.warmth-filter .fh{margin:0;font-size:11.5px;color:var(--faint)}
 .k-handle-link{color:var(--violet);text-decoration:none}
 .k-handle-link:hover{text-decoration:underline}
 .sc-proof{font-family:var(--m);font-size:9.5px;color:var(--red)}

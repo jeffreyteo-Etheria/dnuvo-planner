@@ -1177,6 +1177,109 @@ const DELIVERABLES = {
   live:['Live session','Pre-stream promo post','Post-stream clip','Store review','Spark Ad rights']
 };
 
+/* ── Partnership angles — how a KOL brief differs by SKU and by what it's
+   actually proving. A "review" isn't one angle; distinguish creators by which
+   job the content does for a new, unproven brand:
+     - Diary/challenge  → prove a change happened, over time, on real skin.
+     - Reversal         → name a problem another product/step causes, solve it.
+     - Replacement      → argue against an existing habit on cost/effort, not just liking the product.
+     - Trust-first-touch→ answer "is this brand even legit" before anything else.
+     - Habit/wear-test  → prove it survives daily real conditions, not a single demo.
+     - Continuity       → only credible from someone already shown using the range, not a first post.
+   Each maps to one SKU (via role in SKUS), one message-stack lane, and one
+   proof requirement — so briefs stay claim-compliant per this project's
+   evidence-based-claims rule (CLAUDE.md) instead of drifting into invented numbers. */
+const PARTNERSHIP_ANGLES = [
+  {
+    id:'vitc-challenge', skuId:'vitc', name:'The Vitamin C Challenge',
+    type:'Diary / challenge', lane:'Credibility',
+    condition:'Dullness and uneven tone — the thing a first-time buyer needs to see resolve, not just hear claimed.',
+    format:'Day 0 → Day 14 → Day 30 diary, same lighting and angle every time so the comparison is honest.',
+    fitCreator:'ugc',
+    proof:'Unedited close-up skin photos or video at each check-in. No numeric brightening claim unless a validated benchmark is on file — say "visibly brighter to me," not a percentage.',
+    steps:[
+      'Book all three DELIVERABLES.ugc check-in dates up front (Day 0, Day 14, Day 30) as one Schedule series, not three separate asks.',
+      'Day 0 post sets the baseline on camera — bare face, same spot, same time of day.',
+      'Day 14 and Day 30 repeat the exact framing so the audience can compare, not just take her word.',
+      'Caption states what changed in her own words — texture, tone, how it felt — never a clinical percentage.'
+    ],
+    cta:'Shop link in bio + affiliate code for the Vitamin C Ampoule.'
+  },
+  {
+    id:'calm-antiretinol', skuId:'calm', name:'What I Use After Retinol Nights',
+    type:'Reversal', lane:'Differentiation',
+    condition:'Redness, peeling and purging caused by actives (retinol, exfoliants) — a problem the audience already has, from something else.',
+    format:'Problem → agitate → solve: show the irritation honestly, then the calming step, then the recovery.',
+    fitCreator:'either',
+    proof:'Creator must actually have acne-prone or reactive skin on camera (Fit checklist: Real skin, Ingredient IQ) — this angle fails on a clear-skin creator, however large.',
+    steps:[
+      'Only brief creators who pass the Real skin and Ingredient IQ fit checks — this angle is void without a genuinely reactive complexion on screen.',
+      'Open on the real trigger (a retinol night, a strong exfoliant) and the visible reaction the next morning.',
+      'Apply Trouble Calming Ampoule on camera, name the ACZERO™ mechanism in plain language, not a borrowed clinical term.',
+      'Never say "cures" or "treats" acne — mechanism and visible calming only, per the claim policy.',
+      'Livestream Q&A works well here for objection-handling ("does this actually work with retinol") in real time.'
+    ],
+    cta:'Pin the calming-step routine order in comments; affiliate code for the Calming Ampoule.'
+  },
+  {
+    id:'water-replacement', skuId:'water', name:'Your Sheet Mask Replacement',
+    type:'Replacement', lane:'Differentiation',
+    condition:'Habit and cost, not a skin problem — the audience already masks; the pitch is why the jar replaces that habit.',
+    format:'Routine-swap: replace the usual mask step with Water Cream on camera, same night, side by side.',
+    fitCreator:'ugc',
+    proof:'A cost-per-use comparison is only postable once the team verifies real numbers (jar size vs. a real mask multipack price) — never estimate this on camera. Absorption demo (no pilling, no residue) stands on its own without a cost claim.',
+    steps:[
+      'Confirm with an administrator whether a verified cost-per-use figure exists before scripting any cost claim — if not, run the angle on absorption and convenience only.',
+      'Show the swap in real time: mask routine out, Water Cream in, same evening.',
+      'Demo absorption on camera — apply, wait, show no pilling or residue.',
+      'Message lane is Differentiation: "a ceramide delivery system," not a generic moisturizer claim.'
+    ],
+    cta:'Shop link for Water Cream; suggest the Hero Repair Duo bundle (with Vitamin C Ampoule) as the next step.'
+  },
+  {
+    id:'sun-habit', skuId:'sun', name:'The No-White-Cast Daily Test',
+    type:'Habit / wear-test', lane:'Educational',
+    condition:'Skepticism that SPF is wearable daily under makeup — the barrier to habit formation, not a skin condition.',
+    format:'GRWM wear-test across a real day — application, under makeup, midday recheck.',
+    fitCreator:'either',
+    proof:'State the SPF/PA rating exactly as printed on packaging — that is a fact, not a claim. No invented "reef-safe" or dermatologist-endorsement language unless documented.',
+    steps:[
+      'Apply on bare, then show it going on under makeup without pilling.',
+      'Midday recheck on camera — this is the actual proof point, not the application shot.',
+      'Good livestream add-on: low price point, easy to bundle into a cart during a hero-SKU session.'
+    ],
+    cta:'Store review deliverable + affiliate code; cross-sell into the Starter Duo bundle.'
+  },
+  {
+    id:'toner-trust', skuId:'toner', name:'Why I Started Here — First Impression',
+    type:'Trust / first touch', lane:'Emotional',
+    condition:'Brand skepticism itself — "who is d.nuvo" — since this is the cold-entry SKU for people who don\'t know the brand yet.',
+    format:'Unboxing and first-use reaction, ingredient label read included on camera.',
+    fitCreator:'ugc',
+    proof:'Genuine unboxing, not a staged studio shot — packaging, ingredient list, and an honest first reaction are the whole proof, no results claim needed yet.',
+    steps:[
+      'Book the Day 0 first impression deliverable specifically — this angle is about arrival, not results.',
+      'Read the ingredient list on camera; name-check Fresh Ceramided™ in her own words.',
+      'Honest first-touch reaction to texture and scent — skepticism is allowed and reads as credible.'
+    ],
+    cta:'Frame as "the first thing to try" — link the Starter Duo bundle, not a single SKU.'
+  },
+  {
+    id:'eye-continuity', skuId:'eye', name:'What I Added After 3 Months',
+    type:'Continuity', lane:'Credibility',
+    condition:'None new — this angle only works layered onto an existing, already-proven relationship with the brand.',
+    format:'Routine-update post from a creator who has already posted earlier check-ins on other SKUs.',
+    fitCreator:'ugc',
+    proof:'Only brief creators with a prior completed deliverable on file (check their Schedule history) — a first-touch creator posting this has no credibility to draw on.',
+    steps:[
+      'Pull from Schedule: only offer this angle to a creator with a prior Complete deliverable.',
+      'Frame explicitly as a routine addition, not a new discovery — "three months in, here\'s what I added."',
+      'Never brief this as a cold-traffic asset — per the SKU\'s Upsell role, it is for warm/existing-buyer content and email, not paid acquisition.'
+    ],
+    cta:'No cold shop link — pair with an existing-buyer email or loyalty livestream moment.'
+  }
+];
+
 /* Where a message can be sent from */
 const SEND_ROUTES = [
   { k:'email',   name:'My email',        hint:'Opens your mail app with the message ready' },

@@ -10,6 +10,7 @@
 
 let kolTab = 'ugc';
 let kolStage = 'creators';
+let kolViewFilter = 'default'; // 'default' | 'all' | a KOL_PIPE stage key
 let schedView = 'table';
 let schedStatusFilter = 'all';
 let schedCalMonth = null;
@@ -137,6 +138,7 @@ function renderKol(){
   renderKolPipe();
   renderWarmthFilter();
   renderKolTable();
+  renderKolContentAngles();
   renderKolActivation();
   renderKolPayments();
   renderKolBudgetDrilldown();
@@ -200,32 +202,44 @@ function renderKolPipe(){
   const list = S.kols.filter(k => (k.type||'ugc') === kolTab);
   el('pipeBox').innerHTML = KOL_PIPE.map(s => {
     const n = list.filter(k => k.stage === s.k).length;
-    return `<button class="pipe-s ${s.locked?'lk':''}" data-stage="${s.k}" title="${esc(s.desc)}">
+    return `<button class="pipe-s ${s.locked?'lk':''}${kolViewFilter===s.k?' on':''}" data-stage="${s.k}" title="${esc(s.desc)}">
       <div class="ps-n">${esc(s.name)}${s.locked?' <span class="lk-i">🔒</span>':''}</div>
       <div class="ps-c">${n}</div></button>`;
   }).join('');
   qsa('.pipe-s').forEach(b => b.addEventListener('click', () => {
-    b.classList.toggle('on'); renderKolTable();
+    kolViewFilter = (kolViewFilter === b.dataset.stage) ? 'default' : b.dataset.stage;
+    renderKolPipe(); renderWarmthFilter(); renderKolTable();
   }));
 }
 
-/* No dropdown — the default view is fixed to Confirmed + Completed only
-   (terms locked, or delivered). Clicking a stage tile above explicitly
-   overrides this to show exactly that stage, including cold/warm ones —
-   the tiles are the only way to reach them, by design. */
+/* Dropdown covers the same ground as the stage tiles, plus an explicit
+   "All creators" option so the full roster — including cold/warm leads
+   the default view hides — is one select away, not just a tile click. */
 function renderWarmthFilter(){
   const box = el('warmthFilterBox'); if(!box) return;
-  box.innerHTML = `<p class="fh">Showing confirmed and completed creators only.
-    Click a stage above to see Sourced, Contacted or Negotiating.</p>`;
+  const opts = [
+    { k:'default', name:'Confirmed + Completed (default)' },
+    { k:'all', name:'All creators — every stage' },
+    ...KOL_PIPE.map(s => ({ k:s.k, name:s.name }))
+  ];
+  box.innerHTML = `<label class="kol-view-filter">View
+    <select id="kolViewSel">${opts.map(o =>
+      `<option value="${o.k}"${kolViewFilter===o.k?' selected':''}>${esc(o.name)}</option>`).join('')}</select>
+  </label><span class="fh">Or click a stage above to jump straight to it.</span>`;
+  el('kolViewSel').addEventListener('change', e => {
+    kolViewFilter = e.target.value;
+    renderKolPipe(); renderKolTable();
+  });
 }
 
 function renderKolTable(){
-  const active = qsa('.pipe-s.on').map(b => b.dataset.stage);
   let list = S.kols.filter(k => (k.type||'ugc') === kolTab);
-  if(active.length){
-    list = list.filter(k => active.includes(k.stage));
-  } else {
+  if(kolViewFilter === 'all'){
+    // no stage filter — full roster
+  } else if(kolViewFilter === 'default'){
     list = list.filter(k => { const w = warmthOf(k); return w === 'confirmed' || w === 'completed'; });
+  } else {
+    list = list.filter(k => k.stage === kolViewFilter);
   }
 
   el('kolEmpty').hidden = list.length > 0;
@@ -264,12 +278,11 @@ function renderKolTable(){
 
   el('kolTable').innerHTML = `<thead><tr>${head}</tr></thead><tbody>` + list.map(k => {
     const i = S.kols.indexOf(k);
-    const locked = isLocked(k);
     const del = canDelete(k);
     const stageSel = `<select class="k-stage" data-i="${i}">${KOL_PIPE.map(s =>
       `<option value="${s.k}"${k.stage===s.k?' selected':''}>${s.name}</option>`).join('')}</select>`;
     const acts = `<div class="k-acts">
-      <button class="btn-line sm" data-edit="${i}">${locked && !isAdmin() ? 'View' : 'Edit'}</button>
+      <button class="btn-line sm" data-edit="${i}">Edit</button>
       ${kolTab==='live'?`<button class="btn-line sm" data-fit="${i}">Fit</button>`:''}
       <button class="btn-line sm" data-sched="${i}">Schedule</button>
       <button class="btn-line sm" data-brief="${i}">Brief</button>
@@ -314,12 +327,7 @@ function renderKolTable(){
 
   qsa('.k-stage').forEach(s => s.addEventListener('change', () => {
     const k = S.kols[+s.dataset.i];
-    const wasLocked = isLocked(k);
     const next = KOL_PIPE.find(p => p.k === s.value);
-    if(!isAdmin() && wasLocked && !next.locked){
-      toast('Only an administrator can move a record back out of an approved stage');
-      s.value = k.stage; return;
-    }
     if(next.k === 'done' && !hasProof(k)){
       toast('Add a posting/stream link (proof of delivery) before marking this Complete');
       s.value = k.stage; return;
@@ -334,29 +342,32 @@ function renderKolTable(){
   if(typeof wireCells === 'function') wireCells();
 }
 
-/* ── add / edit ── */
+/* ── add / edit ──
+   Full record access for team members at every pipeline stage — only
+   pricing/terms fields (rate, fee, commission, payment terms) route through
+   the approval gate below when a team member changes an existing value; only
+   canDelete() (admin-only) blocks an action outright. */
 function kolForm(idx, pre){
   const k = idx >= 0 ? S.kols[idx] : (pre || { type: kolTab });
   const type = k.type || kolTab;
   const T = KOL_TYPES[type];
-  const locked = idx >= 0 && isLocked(k) && !isAdmin();
 
   const f = (id,l,val,ph,hint) => `<div class="mf"><label>${l}</label>
-    <input id="${id}" value="${esc(val||'')}" placeholder="${esc(ph||'')}"${locked?' readonly':''}>
+    <input id="${id}" value="${esc(val||'')}" placeholder="${esc(ph||'')}">
     ${hint?`<p class="fh">${esc(hint)}</p>`:''}</div>`;
 
   const common = `
     <div class="mf2">${f('kHandle','Handle',k.handle,'@handle')}
-      <div class="mf"><label>Platform</label><select id="kPlat"${locked?' disabled':''}>
+      <div class="mf"><label>Platform</label><select id="kPlat">
         ${['TikTok','Instagram','YouTube','Shopee Live','Xiaohongshu'].map(p=>
           `<option${k.platform===p?' selected':''}>${p}</option>`).join('')}</select></div></div>
     <div class="mf2">${f('kName','Display name',k.name)}
-      <div class="mf"><label>Tier</label><select id="kTier"${locked?' disabled':''}>
+      <div class="mf"><label>Tier</label><select id="kTier">
         ${['Nano','Micro','Macro'].map(t=>`<option${k.tier===t?' selected':''}>${t}</option>`).join('')}</select></div></div>
     <div class="mf2">${f('kFoll','Followers',k.followers,'blank if unverified')}
       ${f('kAud','Audience',k.audience,'e.g. 82% female · 25–34 · SG')}</div>
     <div class="mf2">${f('kContact','Contact',k.contact,'email, agency, or DM open')}
-      <div class="mf"><label>Contact method</label><select id="kContactMethod"${locked?' disabled':''}>
+      <div class="mf"><label>Contact method</label><select id="kContactMethod">
         <option value=""${!k.contactMethod?' selected':''}>Not set</option>
         ${CONTACT_METHODS.map(m=>`<option${k.contactMethod===m?' selected':''}>${m}</option>`).join('')}</select></div></div>
     ${f('kSource','Source URL',k.source,'where the figures were verified')}
@@ -386,7 +397,7 @@ function kolForm(idx, pre){
 
   const termsBlock = `
     <div class="mf2">
-      <div class="mf"><label>Commission</label><select id="kCommission"${locked?' disabled':''}>
+      <div class="mf"><label>Commission</label><select id="kCommission">
         <option value=""${!k.commission?' selected':''}>Not agreed</option>
         ${COMMISSION_OPTIONS.map(c=>`<option${k.commission===c?' selected':''}>${c}</option>`).join('')}</select>
         ${pricingHint('commission', true)?`<p class="fh">${pricingHint('commission', true)}</p>`:''}</div>
@@ -401,26 +412,24 @@ function kolForm(idx, pre){
     <div class="mf"><label>Creator type</label>
       <div class="type-pick">${Object.values(KOL_TYPES).map(t=>
         `<label class="tp ${type===t.k?'on':''}">
-          <input type="radio" name="ktype" value="${t.k}"${type===t.k?' checked':''}${idx>=0||locked?' disabled':''}>
+          <input type="radio" name="ktype" value="${t.k}"${type===t.k?' checked':''}${idx>=0?' disabled':''}>
           <b>${esc(t.name)}</b><span>${esc(t.goal)}</span></label>`).join('')}</div></div>
     ${common}
     ${type === 'ugc' ? ugcOnly : liveOnly}
     ${termsBlock}
     ${proofBlock}
     <div class="mf"><label>Notes</label>
-      <textarea id="kNotes" rows="3"${locked?' readonly':''}>${esc(k.notes||'')}</textarea></div>
+      <textarea id="kNotes" rows="3">${esc(k.notes||'')}</textarea></div>
     <div class="mf verify-note">Leave a field blank when you could not verify it.
       An empty field is honest; a guess presented as data is not.</div>
-    ${locked?`<div class="mf lock-note">This record is at the <b>${esc((KOL_PIPE.find(s=>s.k===k.stage)||{}).name)}</b> stage.
-      It is read-only for team members — ask an administrator to change agreed terms.</div>`:''}`;
+    ${(idx>=0 && isLocked(k) && !isAdmin())?`<div class="mf lock-note">This record is at the <b>${esc((KOL_PIPE.find(s=>s.k===k.stage)||{}).name)}</b> stage.
+      A change to rate, fee, commission or payment terms is sent to an administrator for approval rather than applied immediately — everything else saves right away.</div>`:''}`;
 
-  const btns = locked
-    ? [['Close','x']]
-    : (idx>=0
-        ? (canDelete(k) ? [['Delete','del'],['Cancel','x'],['Save','ok']] : [['Cancel','x'],['Save','ok']])
-        : [['Cancel','x'],['Add creator','ok']]);
+  const btns = idx>=0
+    ? (canDelete(k) ? [['Delete','del'],['Cancel','x'],['Save','ok']] : [['Cancel','x'],['Save','ok']])
+    : [['Cancel','x'],['Add creator','ok']];
 
-  modal(idx>=0 ? (locked?'Creator record':'Edit creator') : 'Add creator', body, btns, a => {
+  modal(idx>=0 ? 'Edit creator' : 'Add creator', body, btns, a => {
     if(a === 'x') return true;
     if(a === 'del'){ delKol(idx); return true; }
     const h = el('kHandle').value.trim();
@@ -505,7 +514,6 @@ function delKol(idx){
 function fitForm(idx){
   const k = S.kols[idx];
   k.fit = k.fit || {};
-  const locked = isLocked(k) && !isAdmin();
   const cats = [...new Set(FIT_FACTORS.map(f=>f.cat))];
 
   modal(`Fit check — ${k.handle}`, `
@@ -514,11 +522,11 @@ function fitForm(idx){
     ${cats.map(c => `<div class="fit-cat"><span class="fc-l">${esc(c)}</span>
       ${FIT_FACTORS.filter(f=>f.cat===c).map(f => `
         <label class="fit-i ${f.critical?'crit':''}">
-          <input type="checkbox" data-fit="${f.k}"${k.fit[f.k]?' checked':''}${locked?' disabled':''}>
+          <input type="checkbox" data-fit="${f.k}"${k.fit[f.k]?' checked':''}>
           <span><b>${esc(f.name)}${f.critical?' <em>critical</em>':''}</b>${esc(f.test)}</span></label>`).join('')}
     </div>`).join('')}
     <div id="fitOut"></div>`,
-    locked ? [['Close','x']] : [['Cancel','x'],['Save assessment','ok']], a => {
+    [['Cancel','x'],['Save assessment','ok']], a => {
       if(a !== 'ok') return true;
       qsa('[data-fit]').forEach(c => { k.fit[c.dataset.fit] = c.checked; });
       save(); renderKol();
@@ -557,6 +565,71 @@ function fitForm(idx){
   };
   qsa('[data-fit]').forEach(c => c.addEventListener('change', upd));
   upd();
+}
+
+/* ── partnership angles — which job a creator's content does, per SKU.
+   Distinct from buildCreatorBrief below: that's a script for one booked
+   creator; this is the strategy layer that decides which angle to book
+   them for in the first place. ── */
+const ANGLE_TYPE_TONE = {
+  'Diary / challenge':'p-v', 'Reversal':'p-a', 'Replacement':'p-g',
+  'Trust / first touch':'p-n', 'Habit / wear-test':'p-a', 'Continuity':'p-g'
+};
+function angleCreatorFitLabel(a){
+  if(a.fitCreator === 'either') return 'UGC or Livestream';
+  return (KOL_TYPES[a.fitCreator] || {}).name || a.fitCreator;
+}
+function buildAngleBrief(a){
+  const sku = SKUS.find(s => s.id === a.skuId);
+  const lane = DNUVO_MESSAGE_STACK.find(m => m.lane === a.lane) || DNUVO_MESSAGE_STACK[0];
+  return `PARTNERSHIP ANGLE — ${a.name}
+SKU: ${sku ? sku.name : a.skuId}   Angle type: ${a.type}   Best fit: ${angleCreatorFitLabel(a)}
+
+WHAT THIS PROVES
+${a.condition}
+
+MESSAGE LANE
+"${lane.text}" (${a.lane})
+
+FORMAT
+${a.format}
+
+PROOF REQUIRED BEFORE THIS CAN BE POSTED
+${a.proof}
+
+PRACTICAL STEPS
+${a.steps.map((s,i)=>`${i+1}. ${s}`).join('\n')}
+
+CALL TO ACTION
+${a.cta}
+
+RULES
+- Do not state a clinical claim or number beyond what's in the approved messaging stack.
+- If proof isn't verified yet, hold the post rather than publish an estimate.`;
+}
+function renderKolContentAngles(){
+  const box = el('kolAngles'); if(!box) return;
+  box.innerHTML = `<div class="pf-grid">${PARTNERSHIP_ANGLES.map(a => {
+    const sku = SKUS.find(s => s.id === a.skuId);
+    const tone = ANGLE_TYPE_TONE[a.type] || 'p-n';
+    return `<div class="pf-card">
+      <div class="pf-h"><b>${esc(a.name)}</b><span class="pill ${tone}">${esc(a.type)}</span></div>
+      <div class="pf-meta">${esc(sku?sku.name:a.skuId)} · ${esc(angleCreatorFitLabel(a))} · ${esc(a.lane)} lane</div>
+      <p><b>Proves:</b> ${esc(a.condition)}</p>
+      <p><b>Format:</b> ${esc(a.format)}</p>
+      <p><b>Proof required:</b> ${esc(a.proof)}</p>
+      <p><b>CTA:</b> ${esc(a.cta)}</p>
+      <button class="btn-line sm" style="margin-top:8px" data-angle-brief="${a.id}">Copy angle brief</button>
+    </div>`;
+  }).join('')}</div>`;
+
+  qsa('[data-angle-brief]', box).forEach(b => b.addEventListener('click', () => {
+    const a = PARTNERSHIP_ANGLES.find(x => x.id === b.dataset.angleBrief);
+    if(!a) return;
+    navigator.clipboard.writeText(buildAngleBrief(a))
+      .then(()=>toast('Angle brief copied'))
+      .catch(()=>toast('Select the text and copy manually'));
+  }));
 }
 
 /* ── creator brief — a real UGC script/edit-brief for a real roster
