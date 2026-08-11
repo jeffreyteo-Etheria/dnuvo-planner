@@ -332,7 +332,7 @@ function renderKolTable(){
       toast('Add a posting/stream link (proof of delivery) before marking this Complete');
       s.value = k.stage; return;
     }
-    k.stage = s.value; save(); renderKol(); renderOverview();
+    k.stage = s.value; k.updatedAt = new Date().toISOString(); save(); renderKol(); renderOverview();
   }));
   qsa('[data-edit]').forEach(b => b.addEventListener('click', () => kolForm(+b.dataset.edit)));
   qsa('[data-fit]').forEach(b => b.addEventListener('click', () => fitForm(+b.dataset.fit)));
@@ -447,7 +447,8 @@ function kolForm(idx, pre){
       source: el('kSource').value.trim(), sourceAgency: el('kSourceAgency').value.trim(),
       proofLink: el('kProofLink').value.trim(), adCode: el('kAdCode').value.trim(),
       notes: el('kNotes').value.trim(),
-      stage: existing ? existing.stage : 'sourced'
+      stage: existing ? existing.stage : 'sourced',
+      updatedAt: new Date().toISOString()
     });
     // Pricing on an existing record needs admin approval — team edits are held
     // as a proposal, exactly like SKU/bundle/month prices already are. Commission
@@ -503,7 +504,15 @@ function delKol(idx){
     against them. This cannot be undone.</p>`,
     [['Keep','x'],['Delete','ok']], a => {
       if(a !== 'ok') return true;
+      // Tombstoned, not just spliced out — Live sync merges by id across
+      // browsers, and without a tombstone a delete here would silently come
+      // back the next time someone else's browser pushes its still-intact copy.
+      const now = new Date().toISOString();
+      S.scheduleTombstones = S.scheduleTombstones || [];
+      (S.schedule||[]).filter(e => e.kol === k.handle).forEach(e => S.scheduleTombstones.push({ id:e.id, at:now }));
       S.schedule = (S.schedule||[]).filter(e => e.kol !== k.handle);
+      S.kolTombstones = S.kolTombstones || [];
+      S.kolTombstones.push({ id:k.id, at:now });
       S.kols.splice(idx,1); save(); renderKol(); renderOverview();
       toast('Creator removed');
       return true;
@@ -529,6 +538,7 @@ function fitForm(idx){
     [['Cancel','x'],['Save assessment','ok']], a => {
       if(a !== 'ok') return true;
       qsa('[data-fit]').forEach(c => { k.fit[c.dataset.fit] = c.checked; });
+      k.updatedAt = new Date().toISOString();
       save(); renderKol();
       toast('Assessment saved');
       return true;
@@ -719,7 +729,7 @@ function schedForm(idx){
         proofLink: el('scProof').value.trim(), adCode: el('scAdCode').value.trim(),
         done:false, board:'planned',
         feeAgreed: num(type === 'live' ? k.fee : k.rate) || 0, paidStatus:'unpaid',
-        at:new Date().toISOString()
+        at:new Date().toISOString(), updatedAt:new Date().toISOString()
       });
       if(k.stage === 'approved') k.stage = 'scheduled';
       save(); renderKol();
@@ -805,10 +815,12 @@ function renderKolSchedule(){
       toast('Add a proof-of-delivery link before marking this done — open the entry from the Calendar to add one');
       return;
     }
-    e.done = !e.done; e.board = e.done ? 'done' : 'planned';
+    e.done = !e.done; e.board = e.done ? 'done' : 'planned'; e.updatedAt = new Date().toISOString();
     save(); renderKol();
   }));
   qsa('[data-scdel]').forEach(b => b.addEventListener('click', () => {
+    S.scheduleTombstones = S.scheduleTombstones || [];
+    S.scheduleTombstones.push({ id:b.dataset.scdel, at:new Date().toISOString() });
     S.schedule = S.schedule.filter(x=>x.id!==b.dataset.scdel);
     save(); renderKolSchedule(); toast('Removed from the schedule');
   }));
@@ -820,7 +832,7 @@ function renderKolSchedule(){
   }));
   qsa('[data-pay]').forEach(s => s.addEventListener('change', () => {
     const e = S.schedule.find(x=>x.id===s.dataset.pay);
-    if(e){ e.paidStatus = s.value; save(); renderKolPayments(); }
+    if(e){ e.paidStatus = s.value; e.updatedAt = new Date().toISOString(); save(); renderKolPayments(); }
   }));
 
   const dl = el('schedAllIcs');
@@ -881,6 +893,7 @@ function renderKolScheduleBoard(){
       }
       e.board = colKey;
       e.done = (colKey === 'done');
+      e.updatedAt = new Date().toISOString();
       save();
       renderKolSchedule();
       renderKolScheduleBoard();
@@ -1019,17 +1032,21 @@ function showScheduleEntry(id){
           return false;
         }
         e.proofLink = proofNow; e.adCode = el('seAdCode').value.trim();
-        e.done = !e.done; e.board = e.done ? 'done' : 'planned';
+        e.done = !e.done; e.board = e.done ? 'done' : 'planned'; e.updatedAt = new Date().toISOString();
         save(); renderKol(); return true;
       }
-      if(a === 'del'){ S.schedule = S.schedule.filter(x=>x.id!==id); save(); renderKol(); toast('Removed from the schedule'); return true; }
+      if(a === 'del'){
+        S.scheduleTombstones = S.scheduleTombstones || [];
+        S.scheduleTombstones.push({ id, at:new Date().toISOString() });
+        S.schedule = S.schedule.filter(x=>x.id!==id); save(); renderKol(); toast('Removed from the schedule'); return true;
+      }
       return true;
     });
-  el('seProof').addEventListener('change', ev => { e.proofLink = ev.target.value.trim(); save(); });
-  el('seAdCode').addEventListener('change', ev => { e.adCode = ev.target.value.trim(); save(); });
+  el('seProof').addEventListener('change', ev => { e.proofLink = ev.target.value.trim(); e.updatedAt = new Date().toISOString(); save(); });
+  el('seAdCode').addEventListener('change', ev => { e.adCode = ev.target.value.trim(); e.updatedAt = new Date().toISOString(); save(); });
   qsa('[data-pay]').forEach(s => s.addEventListener('change', () => {
     const ent = S.schedule.find(x=>x.id===s.dataset.pay);
-    if(ent){ ent.paidStatus = s.value; save(); renderKol(); }
+    if(ent){ ent.paidStatus = s.value; ent.updatedAt = new Date().toISOString(); save(); renderKol(); }
   }));
 }
 

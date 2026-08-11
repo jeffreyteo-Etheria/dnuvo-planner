@@ -33,6 +33,8 @@ function normalizeState(obj){
   s.months   = s.months   || MONTHS.map(m => ({ k:m.k, units:m.units, price:m.price }));
   s.compIntel = s.compIntel || COMPETITOR_INTEL.map(r => Object.assign({}, r));
   s.kols     = s.kols     || [];
+  s.kolTombstones = s.kolTombstones || [];
+  s.scheduleTombstones = s.scheduleTombstones || [];
   s.requests = s.requests || [];
   s.checks   = s.checks   || {};
   s.gates    = s.gates    || { reviews:0, rating:0, roas:0, pool:0, buyers:0 };

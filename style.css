@@ -486,7 +486,10 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
 .empty{text-align:center;padding:34px 20px;color:var(--faint);font-size:13px}
 
 /* ══════════ MODAL ══════════ */
-.modal{position:fixed;inset:0;z-index:800;background:rgba(22,24,29,.55);
+/* Above .drawer (820) — confirm dialogs like Live sync's "Pull and replace"
+   open while the Sessions drawer is still on screen behind them, and need
+   to stay clickable rather than sit under the drawer's dimming overlay. */
+.modal{position:fixed;inset:0;z-index:830;background:rgba(22,24,29,.55);
   display:none;align-items:center;justify-content:center;padding:24px}
 .modal:not([hidden]){display:flex}
 .modal-card{background:var(--panel);border-radius:10px;width:100%;max-width:560px;

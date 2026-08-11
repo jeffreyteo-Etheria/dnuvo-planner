@@ -275,10 +275,12 @@ function renderLiveSyncPane(){
       modal('Replace local plan?', `<p style="font-size:13.5px;color:var(--mute);line-height:1.6">
         The workspace was last saved <b style="color:var(--ink)">${esc(new Date(d.savedAt).toLocaleString())}</b>.</p>
         <p style="font-size:13px;color:var(--mute);margin-top:10px">
-        Pulling replaces what is in this browser. Save a session first if you have unsaved work.</p>`,
+        The creator roster and schedule always merge — nothing added in this browser is lost either way.
+        Pulling replaces everything else (pricing, budget, settings) with the workspace's copy. Save a
+        session first if you have unsaved work there.</p>`,
         [['Cancel','x'],['Pull and replace','ok']], a => {
-          if(a!=='ok') return true;
-          S = normalizeState(d.current); SESSIONS = d.sessions || SESSIONS;
+          if(a!=='ok'){ mergeRosterFrom(d.current); save(); renderKol(); return true; }
+          S = applyRemoteMergedState(d.current); SESSIONS = d.sessions || SESSIONS;
           save(); saveSessions(); renderAll(); renderKol(); renderLiveSyncPane(); renderSessions();
           toast('Pulled from the shared workspace');
           return true;
@@ -478,3 +480,43 @@ saveSessions = function(){
     liveSyncPush().then(()=>toast('Pushed to the shared workspace')).catch(()=>{});
   }
 };
+
+/* Debounced auto-push on every plan save, not just an explicit session
+   snapshot — this is what makes "add a KOL" actually reach the shared
+   workspace without someone remembering to open Sessions and click Push.
+   A burst of edits collapses into one push ~2.5s after the user stops,
+   instead of one network round-trip per keystroke-adjacent save. Silent on
+   both success and failure — the manual Push button and the Live sync
+   pane's timestamps are still there for anyone who wants to check or force
+   it; a toast on every ambient save would just be noise. */
+let _liveSyncSaveDebounce;
+const _save = save;
+save = function(){
+  _save();
+  if(LIVESYNC.auto && LIVESYNC.key){
+    clearTimeout(_liveSyncSaveDebounce);
+    _liveSyncSaveDebounce = setTimeout(() => {
+      liveSyncPush().then(() => {
+        if(typeof renderLiveSyncPane === 'function' && el('liveSyncPane')) renderLiveSyncPane();
+      }).catch(()=>{});
+    }, 2500);
+  }
+};
+
+/* Auto-pull when the tab regains focus, not just on first load — a browser
+   left open should catch a teammate's push without a manual refresh.
+   Throttled so rapid tab-switching doesn't fire a network call every time,
+   and skipped outright while a modal is open: liveSyncAutoPullOnBoot can
+   replace S wholesale, and an editor modal (kolForm, fitForm, ...) holds an
+   array index captured when it opened — if the array gets rebuilt under it,
+   that index could now point at a different record. Simplest safe fix is
+   to just wait for the modal to close before pulling. */
+let _lastFocusPull = 0;
+window.addEventListener('focus', () => {
+  if(!LIVESYNC.key) return;
+  if(el('modal') && !el('modal').hidden) return;
+  const now = Date.now();
+  if(now - _lastFocusPull < 20000) return;
+  _lastFocusPull = now;
+  if(typeof liveSyncAutoPullOnBoot === 'function') liveSyncAutoPullOnBoot();
+});

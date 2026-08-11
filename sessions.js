@@ -118,15 +118,102 @@ async function ghPull(){
 
 /* ── Live sync ───────────────────────────────────
    One shared blob on Netlify, protected by a single
-   workspace passphrase (not a per-user account). Push
-   is last-write-wins — there is no merge logic, so two
-   people editing at once means whoever pushes last wins.
-   This is what lets a team member's proposal actually
-   reach the admin's browser without a manual handoff.  */
+   workspace passphrase (not a per-user account). Whole-
+   plan fields (pricing, budget, settings) are still
+   last-write-wins — there is no merge logic there, so two
+   people editing the price book at once means whoever
+   pushes last wins. The creator roster and its schedule
+   are the one part of the plan meant to be added to by
+   everyone constantly, so those two lists get a real
+   merge instead (see mergeById below): a push accumulates
+   additions from both sides rather than overwriting.
+   This is also what lets a team member's proposal actually
+   reach the admin's browser without a manual handoff.    */
 const LIVESYNC_URL = '/.netlify/functions/sync';
+
+/* Merge two id-keyed lists (KOL roster or schedule) plus their tombstones.
+   - An id present on only one side survives — an addition never gets wiped
+     out by the other side's push, which is what "the list accumulates"
+     requires under last-write-wins.
+   - An id present on both sides keeps whichever copy has the newer
+     updatedAt — an edit wins over a stale copy of the same record.
+   - A delete is a tombstone {id, at}, not just an absence — without it, a
+     delete would look identical to "never seen this id," and the next
+     push from a browser that still has the old record would resurrect it.
+     A tombstone wins over the record on the other side unless that other
+     copy has a *newer* updatedAt than the delete — i.e. a genuine edit
+     made after the delete un-deletes it, rather than a delete staying
+     permanently unresolvable against a browser that never got the memo. */
+function mergeById(localList, remoteList, localTombstones, remoteTombstones){
+  const tomb = new Map();
+  (localTombstones||[]).concat(remoteTombstones||[]).forEach(t => {
+    if(!t || !t.id) return;
+    const cur = tomb.get(t.id);
+    if(!cur || t.at > cur.at) tomb.set(t.id, t);
+  });
+  const rec = new Map();
+  (localList||[]).concat(remoteList||[]).forEach(r => {
+    if(!r || !r.id) return;
+    const cur = rec.get(r.id);
+    if(!cur || (r.updatedAt||'') > (cur.updatedAt||'')) rec.set(r.id, r);
+  });
+  const list = [];
+  rec.forEach((r, id) => {
+    const t = tomb.get(id);
+    if(t && t.at >= (r.updatedAt||'')) return; // delete wins over a stale-or-equal copy
+    list.push(r);
+  });
+  const tombstones = [...tomb.values()].sort((a,b) => b.at.localeCompare(a.at)).slice(0, 500);
+  return { list, tombstones };
+}
+
+/* Merges the shared workspace's roster/schedule into S in place — used by
+   both push (merge before writing back) and pull (merge before adopting
+   remote's other fields), so neither direction can drop a record the other
+   browser added or silently resurrect one it deleted. */
+function mergeRosterFrom(remoteCurrent){
+  if(!remoteCurrent) return;
+  const kolsMerge = mergeById(S.kols, remoteCurrent.kols, S.kolTombstones, remoteCurrent.kolTombstones);
+  const schedMerge = mergeById(S.schedule, remoteCurrent.schedule, S.scheduleTombstones, remoteCurrent.scheduleTombstones);
+  S.kols = kolsMerge.list; S.kolTombstones = kolsMerge.tombstones;
+  S.schedule = schedMerge.list; S.scheduleTombstones = schedMerge.tombstones;
+}
+
+/* Adopting a pulled workspace normally means "replace S with remote" — fine
+   for pricing/budget/settings, which are meant to have one owner at a time.
+   The roster and its schedule are the exception: everyone adds to those
+   continuously, so replacing wholesale would drop whatever this browser
+   added since its last pull. Merge those two lists first, then let remote
+   win on everything else, same as before. */
+function applyRemoteMergedState(remoteCurrent){
+  mergeRosterFrom(remoteCurrent);
+  const mergedKols = S.kols, mergedKolTomb = S.kolTombstones;
+  const mergedSched = S.schedule, mergedSchedTomb = S.scheduleTombstones;
+  S = normalizeState(Object.assign({}, remoteCurrent));
+  S.kols = mergedKols; S.kolTombstones = mergedKolTomb;
+  S.schedule = mergedSched; S.scheduleTombstones = mergedSchedTomb;
+  return S;
+}
 
 async function liveSyncPush(){
   if(!LIVESYNC.key) throw new Error('No workspace key saved.');
+
+  // Pull-merge-push: fold in whatever's already on the shared workspace
+  // before overwriting it, so this push accumulates roster/schedule changes
+  // instead of erasing something a teammate pushed since our last pull.
+  // Best-effort — a failed pre-merge fetch (offline, nothing pushed yet)
+  // just falls through to pushing the local state as-is.
+  try{
+    const r = await fetch(LIVESYNC_URL, { headers: { 'X-Workspace-Key': LIVESYNC.key } });
+    if(r.ok){
+      const remote = await r.json();
+      if(remote && remote.current){
+        mergeRosterFrom(remote.current);
+        save();
+      }
+    }
+  }catch(e){ /* offline, or nothing pushed yet — push local state as-is */ }
+
   const r = await fetch(LIVESYNC_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Workspace-Key': LIVESYNC.key },
@@ -160,6 +247,10 @@ async function liveSyncPull(){
    yet; that case is handed to the user instead of guessed at. */
 async function liveSyncAutoPullOnBoot(){
   if(!LIVESYNC.key) return;
+  // A record editor (kolForm, fitForm, ...) holds an array index captured
+  // when it opened; replacing S while one is open risks that index landing
+  // on a different record once the array's rebuilt. Wait for it to close.
+  if(el('modal') && !el('modal').hidden) return;
   const prevLastPull = LIVESYNC.lastPull;
   let d;
   try{ d = await liveSyncPull(); }
@@ -172,7 +263,7 @@ async function liveSyncAutoPullOnBoot(){
   const hasUnpushedLocalWork = !!localEdit && (!LIVESYNC.lastPush || localEdit > LIVESYNC.lastPush);
 
   if(!hasUnpushedLocalWork){
-    S = normalizeState(d.current); SESSIONS = d.sessions || SESSIONS;
+    S = applyRemoteMergedState(d.current); SESSIONS = d.sessions || SESSIONS;
     save(); saveSessions(); renderAll(); renderKol();
     if(typeof renderLiveSyncPane === 'function' && el('liveSyncPane')) renderLiveSyncPane();
     toast('Synced with the latest shared workspace data');
@@ -183,11 +274,18 @@ async function liveSyncAutoPullOnBoot(){
     This browser has changes that were never pushed, and the shared workspace was last saved
     <b style="color:var(--ink)">${esc(new Date(d.savedAt).toLocaleString())}</b>.</p>
     <p style="font-size:13px;color:var(--mute);margin-top:10px">
-    These can't be merged automatically — pick which one should win. If unsure, keep your local
-    changes and push them from Sessions → Live sync once you've confirmed they're the right ones.</p>`,
+    The creator roster and schedule merge automatically either way — nothing added on either side
+    gets lost. This choice only decides which copy wins for everything else (pricing, budget,
+    settings). If unsure, keep your local changes and push them from Sessions → Live sync once
+    you've confirmed they're the right ones.</p>`,
     [['Keep my local changes','x'],['Use the shared workspace','ok']], a => {
-      if(a !== 'ok') return true;
-      S = normalizeState(d.current); SESSIONS = d.sessions || SESSIONS;
+      if(a !== 'ok'){
+        // Even "keep local" still folds in the shared roster/schedule —
+        // that part isn't part of the conflict, only pricing/budget/settings is.
+        mergeRosterFrom(d.current); save(); renderKol();
+        return true;
+      }
+      S = applyRemoteMergedState(d.current); SESSIONS = d.sessions || SESSIONS;
       save(); saveSessions(); renderAll(); renderKol();
       toast('Loaded the latest shared workspace data');
       return true;
