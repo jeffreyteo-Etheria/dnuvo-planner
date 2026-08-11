@@ -17,7 +17,7 @@ const LIVESYNC_KEY = 'dnuvo_livesync_v1';
 // change the other. A browser only gets this default once, the first time
 // it ever loads the app; if someone later clears the key or turns auto-push
 // off from the Sessions drawer, that choice sticks and is never overwritten.
-const DEFAULT_WORKSPACE_KEY = 'dnuvo-team-2026';
+const DEFAULT_WORKSPACE_KEY = 'dnuvo2026';
 
 let SESSIONS = [];
 let SYNC = { token:'', gistId:'', lastPush:null, lastPull:null, auto:false };
