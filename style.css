@@ -242,7 +242,10 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
 .pp-cell .pp-sub{font-size:10.5px;color:var(--faint)}
 
 /* kol header actions */
-.kol-head-acts{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+.kol-head-acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-left:auto}
+.kol-import-update{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--mute);
+  padding:0 4px;cursor:pointer;white-space:nowrap}
+.kol-import-update input{accent-color:var(--violet);width:14px;height:14px}
 
 /* ══════════ CHARTS ══════════ */
 .chart{display:flex;align-items:flex-end;gap:8px;height:170px;padding-top:8px}

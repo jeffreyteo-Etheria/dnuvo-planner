@@ -1830,6 +1830,7 @@ if(kolImportBtn && kolImportFile){
   kolImportFile.addEventListener('change', e => {
     const f = e.target.files && e.target.files[0];
     if(!f) return;
+    const updateMode = !!(el('kolImportUpdate') && el('kolImportUpdate').checked);
     const r = new FileReader();
     r.onload = () => {
       if(typeof parseCsvObjects !== 'function'){ toast('CSV parser not available'); return; }
@@ -1837,18 +1838,16 @@ if(kolImportBtn && kolImportFile){
       // Keyed on type+handle, not handle alone — the same person can legitimately
       // have both a UGC and a Livestream record, since this app tracks those as
       // two separate rosters evaluated on different things.
-      const existing = new Set(S.kols.map(k => (k.type||'ugc') + '|' + (k.handle||'').toLowerCase()));
-      let added = 0, skipped = 0;
+      const existingIdx = new Map(S.kols.map((k,i) => [(k.type||'ugc') + '|' + (k.handle||'').toLowerCase(), i]));
+      let added = 0, updated = 0, skipped = 0;
       rowsIn.forEach(x => {
         if(!x.handle) return;
         const handle = x.handle.startsWith('@') ? x.handle : ('@' + x.handle);
         const type = (x.type === 'live' ? 'live' : 'ugc');
         const key = type + '|' + handle.toLowerCase();
-        if(existing.has(key)){ skipped++; return; }
         const stage = KOL_PIPE.find(s => s.k === (x.stage||'').trim()) ? x.stage.trim() : 'sourced';
         const commission = COMMISSION_OPTIONS.includes((x.commission||'').trim()) ? x.commission.trim() : '';
-        S.kols.push({
-          id: 'K'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
+        const fields = {
           type, handle, platform: x.platform || 'TikTok',
           name: x.name || '', tier: x.tier || 'Nano',
           followers: x.followers || '', audience: x.audience || '', contact: x.contact || '',
@@ -1857,14 +1856,29 @@ if(kolImportBtn && kolImportFile){
           er: x.er || '', posts: x.posts || '', rate: x.rate || '',
           avgViews: x.avgviews || '', avgGmv: x.avggmv || '', gpm: x.gpm || '', retention: x.retention || '', fee: x.fee || '',
           commission, paymentTerms: x.paymentterms || '', proofLink: x.prooflink || '', adCode: x.adcode || '',
-          notes: x.notes || '', stage, fit: {}
-        });
-        existing.add(key);
+          notes: x.notes || '', stage, updatedAt: new Date().toISOString()
+        };
+        if(existingIdx.has(key)){
+          if(!updateMode){ skipped++; return; }
+          const i = existingIdx.get(key);
+          // Overwrite the file's fields but keep this record's id (so schedule
+          // links and Live sync's merge history stay attached to the same
+          // record) and its existing fit checklist (not part of this schema).
+          S.kols[i] = Object.assign({}, S.kols[i], fields);
+          updated++;
+          return;
+        }
+        S.kols.push(Object.assign({ id: 'K'+Date.now().toString(36)+Math.random().toString(36).slice(2,5), fit:{} }, fields));
+        existingIdx.set(key, S.kols.length - 1);
         added++;
       });
-      if(added){
+      if(added || updated){
         save(); if(typeof renderKol === 'function') renderKol(); renderOverview();
-        toast(added + ' creators imported' + (skipped ? ', ' + skipped + ' skipped (already in roster)' : ''));
+        const parts = [];
+        if(added) parts.push(added + ' added');
+        if(updated) parts.push(updated + ' updated');
+        if(skipped) parts.push(skipped + ' skipped (already in roster)');
+        toast(parts.join(', '));
       }
       else toast(skipped ? 'All ' + skipped + ' rows were already in the roster' : 'No valid creator rows found');
     };
