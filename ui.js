@@ -215,29 +215,34 @@ function renderSync(){
 }
 
 /* ── LIVE SYNC ──
-   A shared workspace, not a private one — anyone with the workspace
-   key sees and can overwrite the same plan. Push is last-write-wins;
-   there is no merge, unlike GitHub sync's separate-gist-per-owner
-   model. Opt-in only: nothing here runs until a key is entered.   */
+   A shared workspace, not a private one — anyone with the workspace key
+   sees and can overwrite the same plan. On by default (DEFAULT_WORKSPACE_KEY
+   in sessions.js) so nobody has to find this pane and configure it — this
+   is just the escape hatch for pointing a browser at a different key, or
+   turning it off. The KOL roster and schedule merge by id on every push and
+   pull (see mergeById in sessions.js); everything else in the plan (pricing,
+   budget, settings) is still last-write-wins. */
 function renderLiveSyncPane(){
   const connected = !!LIVESYNC.key;
+  const isDefault = LIVESYNC.key === DEFAULT_WORKSPACE_KEY;
   el('liveSyncPane').innerHTML = `
     <div class="sync-state ${connected?'ok':''}">
       <span class="ss-dot"></span>
       <div><b>${connected?'Live sync enabled':'Not enabled'}</b>
         <span>${connected
-          ? 'Shared workspace — everyone with this key sees the same plan'
+          ? (isDefault ? 'Shared workspace — on by default, same as every other browser here' : 'Shared workspace — everyone with this key sees the same plan')
           : 'Enter your team’s workspace key to turn this on'}</span></div>
     </div>
 
     <div class="mf"><label>Workspace key</label>
       <input id="lsKey" type="password" value="${esc(LIVESYNC.key)}" placeholder="ask your admin for this">
-      <p class="fh">Set once by whoever configured this deploy (as <b>WORKSPACE_KEY</b> in Netlify's site
-        settings) and shared with the team out of band. It stays in this browser and is sent only to
-        this site's own sync function — never to a third party.</p></div>
+      <p class="fh">Pre-filled by default so every browser opening this app shares the same workspace
+        automatically. Only change this if you deliberately want to point this browser at a different
+        workspace — it must match <b>WORKSPACE_KEY</b> in Netlify's site settings. Stays in this browser,
+        sent only to this site's own sync function — never to a third party.</p></div>
 
     <label class="sync-auto"><input type="checkbox" id="lsAuto"${LIVESYNC.auto?' checked':''}>
-      <span>Push automatically when I save a session</span></label>
+      <span>Push automatically as I work (on by default)</span></label>
 
     <div class="sync-acts">
       <button class="btn-solid" id="lsPushBtn">Push to workspace</button>
@@ -250,9 +255,11 @@ function renderLiveSyncPane(){
     </div>
 
     <div class="sync-note">
-      This is a shared plan, not a personal backup — pushing overwrites whatever the workspace last
-      had, and pulling overwrites what's in this browser. There is no merge: if two people push at
-      once, the later push wins. Good for a small team, not for simultaneous editing.
+      The creator roster and its schedule merge by id — additions from any browser accumulate, an edit
+      keeps whichever copy is newer, and a delete stays deleted rather than getting silently restored by
+      someone else's older copy. Everything else in the plan (pricing, budget, settings) is still
+      last-write-wins: pushing overwrites what the workspace had, pulling overwrites what's in this
+      browser, and if two people push at once for those fields, the later push wins.
     </div>`;
 
   el('lsKey').addEventListener('input', e => { LIVESYNC.key = e.target.value.trim(); saveLiveSync(); });

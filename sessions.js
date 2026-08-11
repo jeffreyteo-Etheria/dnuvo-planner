@@ -9,6 +9,16 @@ const SESS_KEY = 'dnuvo_sessions_v1';
 const SYNC_KEY = 'dnuvo_sync_v1';
 const LIVESYNC_KEY = 'dnuvo_livesync_v1';
 
+// Live sync ships pre-configured with this passphrase so nobody has to open
+// Sessions and paste a key by hand — same trust model as SITE_PASS/ADMIN_PASS
+// in app.js (a shared team secret, plainly readable in this static site's
+// source, not a real access-control boundary). This value MUST match
+// WORKSPACE_KEY set in Netlify's site environment variables — change one,
+// change the other. A browser only gets this default once, the first time
+// it ever loads the app; if someone later clears the key or turns auto-push
+// off from the Sessions drawer, that choice sticks and is never overwritten.
+const DEFAULT_WORKSPACE_KEY = 'dnuvo-team-2026';
+
 let SESSIONS = [];
 let SYNC = { token:'', gistId:'', lastPush:null, lastPull:null, auto:false };
 let LIVESYNC = { key:'', lastPush:null, lastPull:null, auto:false };
@@ -16,7 +26,15 @@ let LIVESYNC = { key:'', lastPush:null, lastPull:null, auto:false };
 function loadSessions(){
   try{ SESSIONS = JSON.parse(localStorage.getItem(SESS_KEY) || '[]'); }catch(e){ SESSIONS = []; }
   try{ SYNC = Object.assign(SYNC, JSON.parse(localStorage.getItem(SYNC_KEY) || '{}')); }catch(e){}
-  try{ LIVESYNC = Object.assign(LIVESYNC, JSON.parse(localStorage.getItem(LIVESYNC_KEY) || '{}')); }catch(e){}
+  const rawLiveSync = localStorage.getItem(LIVESYNC_KEY);
+  try{ LIVESYNC = Object.assign(LIVESYNC, JSON.parse(rawLiveSync || '{}')); }catch(e){}
+  if(rawLiveSync === null){
+    // First time this browser has ever opened the app — turn Live sync on
+    // by default instead of leaving it for someone to discover and configure.
+    LIVESYNC.key = DEFAULT_WORKSPACE_KEY;
+    LIVESYNC.auto = true;
+    saveLiveSync();
+  }
 }
 function saveSessions(){
   try{ localStorage.setItem(SESS_KEY, JSON.stringify(SESSIONS)); }catch(e){}
