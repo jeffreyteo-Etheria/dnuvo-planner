@@ -1171,6 +1171,13 @@ const KOL_WARMTH = [
 const CONTACT_METHODS = ['DM','Email','Other'];
 const COMMISSION_OPTIONS = ['15%','20%','30%'];
 
+/* Primary audience market — set only once a team member has actually
+   checked platform-native audience insights and confirmed this market
+   makes up over half the audience. Left unset by default (including on
+   CSV import) rather than guessed, matching this hub's verified-data-only
+   rule for every other field. */
+const AUDIENCE_MARKETS = ['SG','TH','MY','Other'];
+
 /* Deliverable types per creator type */
 const DELIVERABLES = {
   ugc: ['Day 0 first impression','Day 14 check-in','Day 30 verdict','Store review','Photo set','Spark Ad rights'],

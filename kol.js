@@ -11,10 +11,12 @@
 let kolTab = 'ugc';
 let kolStage = 'creators';
 let kolViewFilter = 'default'; // 'default' | 'all' | a KOL_PIPE stage key
+let kolFilters = { q:'', platform:'', tier:'', creatorClass:'', market:'', dupes:'all' };
 let schedView = 'table';
 let schedStatusFilter = 'all';
 let schedCalMonth = null;
 let schedCalFilters = { kol:'', type:'', status:'' };
+let schedBoardFilters = { type:'' };
 const SCHED_BOARD_TONE = { planned:'p-n', confirmed:'p-v', live:'p-a', done:'p-g' };
 function schedBoardOf(e){ return e.board || (e.done ? 'done' : 'planned'); }
 /* Cold = never contacted. Warm = in conversation. Confirmed = terms locked
@@ -38,16 +40,105 @@ function scheduleStatusFor(handle){
   const past = entries.filter(e => e.date < today).sort((a,b) => b.date.localeCompare(a.date));
   return upcoming[0] || past[0];
 }
+function normHandle(h){
+  return String(h || '').trim().toLowerCase().replace(/^@+/, '');
+}
+function inferredCreatorClass(k){
+  const raw = [k.creatorClass, k.creatorRemark, k.tier, k.sourceAgency, k.source, k.notes].join(' ').toLowerCase();
+  return raw.includes('artiste') || raw.includes('bloomrs') ? 'Artiste' : 'Creator';
+}
+function duplicateHandleGroups(){
+  const groups = new Map();
+  (S.kols || []).forEach((k, i) => {
+    const h = normHandle(k.handle);
+    if(!h) return;
+    if(!groups.has(h)) groups.set(h, []);
+    groups.get(h).push({ k, i });
+  });
+  return [...groups.entries()].filter(x => x[1].length > 1);
+}
+function duplicateInfoFor(k){
+  const h = normHandle(k.handle);
+  if(!h) return null;
+  const matches = (S.kols || []).map((x,i) => ({ k:x, i })).filter(x => normHandle(x.k.handle) === h);
+  return matches.length > 1 ? matches : null;
+}
+function followerTier(k){
+  const explicit = String(k.tier || '').toLowerCase();
+  if(explicit.includes('mega')) return 'Mega';
+  if(explicit.includes('macro')) return 'Macro';
+  if(explicit.includes('micro')) return 'Micro';
+  if(explicit.includes('nano')) return 'Nano';
+  const f = num(k.followers);
+  if(f >= 100000) return 'Mega';
+  if(f >= 10000) return 'Micro';
+  if(f > 0) return 'Nano';
+  return '';
+}
+function verifiedFieldCount(k){
+  const keys = k.type === 'live'
+    ? ['followers','avgViews','avgGmv','gpm','audience','source','contact']
+    : ['followers','er','posts','audience','source','contact','proofLink'];
+  return keys.filter(key => String(k[key] || '').trim()).length;
+}
+function creatorScore(k){
+  const fit = fitScore(k);
+  const gpm = computeGpm(k);
+  const verified = verifiedFieldCount(k);
+  let score = Math.min(25, verified * 4);
+  score += k.proofLink ? 10 : 0;
+  score += k.recentBrandPosts ? 8 : 0;
+  if(k.type === 'live'){
+    score += fit * 4;
+    score += gpm >= 511 ? 25 : gpm >= 300 ? 18 : gpm >= 200 ? 10 : 0;
+  } else {
+    const tier = followerTier(k);
+    score += tier === 'Mega' ? 14 : tier === 'Macro' ? 12 : tier === 'Micro' ? 9 : tier === 'Nano' ? 6 : 0;
+    score += num(k.er) >= 3 ? 15 : num(k.er) > 0 ? 8 : 0;
+    score += num(k.posts) >= 50 ? 8 : num(k.posts) > 0 ? 4 : 0;
+  }
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+function creatorRating(k){
+  const s = creatorScore(k);
+  if(s >= 75) return { label:'Strong', tone:'p-g', why:'high verified data and fit' };
+  if(s >= 55) return { label:'Watch', tone:'p-v', why:'usable, still needs confirmation' };
+  if(s >= 35) return { label:'Test', tone:'p-a', why:'limited data; keep terms low' };
+  return { label:'Incomplete', tone:'p-r', why:'too many unverified fields' };
+}
+function creatorRoas(k){
+  const gmv = num(k.avgGmv);
+  const fee = num(k.fee || k.rate);
+  if(gmv && fee) return gmv / fee;
+  if(k.type === 'live' && computeGpm(k) && num(k.avgViews) && fee) return (computeGpm(k) * num(k.avgViews) / 1000) / fee;
+  return 0;
+}
+function metricHelp(k){
+  const g = computeGpm(k);
+  const roas = creatorRoas(k);
+  return `Score: verified field completeness + proof + recent brand-post data${k.type==='live'?' + fit ticks + GPM band':' + tier + engagement/posts'}. ` +
+    `Rating: Strong 75+, Watch 55+, Test 35+, otherwise Incomplete. ` +
+    `GPM: ${g ? 'GMV/views x 1,000' : 'needs avg GMV and avg views'}. ` +
+    `ROAS: ${roas ? 'avg GMV divided by agreed fee/rate' : 'needs GMV and fee/rate'}.`;
+}
 /* Clickable profile link — only for platforms with a reliable public
    @handle URL pattern. Shopee Live and Xiaohongshu don't have one, so
    those stay plain text rather than link to a guess. */
 function profileUrl(k){
   const h = (k.handle || '').replace(/^@/, '');
   if(!h) return '';
-  if(k.platform === 'TikTok') return 'https://www.tiktok.com/@' + h;
-  if(k.platform === 'Instagram') return 'https://www.instagram.com/' + h;
-  if(k.platform === 'YouTube') return 'https://www.youtube.com/@' + h;
+  const p = String(k.platform || '').trim().toLowerCase();
+  if(p === 'tiktok') return 'https://www.tiktok.com/@' + h;
+  if(p === 'instagram' || p === 'ig') return 'https://www.instagram.com/' + h;
+  if(p === 'youtube') return 'https://www.youtube.com/@' + h;
   return '';
+}
+/* Purely-numeric-looking handles ("@2,308", "@50k") are the tell-tale sign
+   a follower count leaked into the handle column upstream — not a real
+   @handle. Caught here so it can't re-enter the roster from manual entry
+   after being cleaned out of an import once. */
+function looksLikeFollowerCount(handle){
+  return /^[\d,.]+[kKmM]?$/.test(String(handle || '').replace(/^@+/, '').trim());
 }
 const KOL_STAGE_TABS = [
   { k:'creators', name:'Creators', desc:'Source, verify, select' },
@@ -137,6 +228,8 @@ function renderKol(){
   renderKolTabs();
   renderKolPipe();
   renderWarmthFilter();
+  renderKolFilters();
+  renderDuplicateWatch();
   renderKolTable();
   renderKolContentAngles();
   renderKolActivation();
@@ -232,6 +325,65 @@ function renderWarmthFilter(){
   });
 }
 
+function renderKolFilters(){
+  const box = el('kolFilterBox'); if(!box) return;
+  const platforms = [...new Set((S.kols || []).map(k => k.platform).filter(Boolean))].sort();
+  const tiers = ['Nano','Micro','Macro','Mega'];
+  const classes = ['Creator','Artiste'];
+  box.innerHTML = `
+    <label class="kol-search">Search
+      <input id="kolSearch" value="${esc(kolFilters.q)}" placeholder="@handle, name, notes, brand posts">
+    </label>
+    <label>Channel
+      <select id="kolPlatformFilter"><option value="">All</option>${platforms.map(p => `<option value="${esc(p)}"${kolFilters.platform===p?' selected':''}>${esc(p)}</option>`).join('')}</select>
+    </label>
+    <label>Tier
+      <select id="kolTierFilter"><option value="">All</option>${tiers.map(t => `<option value="${t}"${kolFilters.tier===t?' selected':''}>${t}</option>`).join('')}</select>
+    </label>
+    <label>Remark
+      <select id="kolClassFilter"><option value="">All</option>${classes.map(c => `<option value="${c}"${kolFilters.creatorClass===c?' selected':''}>${c}</option>`).join('')}</select>
+    </label>
+    <label>Market &gt;50%
+      <select id="kolMarketFilter"><option value="">All</option>
+        ${AUDIENCE_MARKETS.map(m => `<option value="${m}"${kolFilters.market===m?' selected':''}>${m}</option>`).join('')}
+        <option value="_unset"${kolFilters.market==='_unset'?' selected':''}>Not verified</option></select>
+    </label>
+    <label>Duplicates
+      <select id="kolDupFilter">
+        <option value="all"${kolFilters.dupes==='all'?' selected':''}>Show all</option>
+        <option value="only"${kolFilters.dupes==='only'?' selected':''}>Potential duplicates only</option>
+      </select>
+    </label>
+    <button class="btn-line sm" id="kolFilterClear">Clear</button>`;
+  const apply = () => {
+    kolFilters.q = el('kolSearch').value.trim();
+    kolFilters.platform = el('kolPlatformFilter').value;
+    kolFilters.tier = el('kolTierFilter').value;
+    kolFilters.creatorClass = el('kolClassFilter').value;
+    kolFilters.market = el('kolMarketFilter').value;
+    kolFilters.dupes = el('kolDupFilter').value;
+    renderKolTable();
+  };
+  ['kolSearch','kolPlatformFilter','kolTierFilter','kolClassFilter','kolMarketFilter','kolDupFilter'].forEach(id => {
+    const node = el(id);
+    node.addEventListener(id === 'kolSearch' ? 'input' : 'change', apply);
+  });
+  el('kolFilterClear').addEventListener('click', () => {
+    kolFilters = { q:'', platform:'', tier:'', creatorClass:'', market:'', dupes:'all' };
+    renderKolFilters(); renderKolTable();
+  });
+}
+
+function renderDuplicateWatch(){
+  const box = el('kolDuplicateBox'); if(!box) return;
+  const groups = duplicateHandleGroups();
+  box.hidden = !groups.length;
+  if(!groups.length){ box.innerHTML = ''; return; }
+  box.innerHTML = `<b>${groups.length} duplicate handle${groups.length===1?'':'s'} found.</b>
+    ${groups.map(([h, items]) => `<span class="dup-chip">@${esc(h)} · ${items.map(x => esc((x.k.type||'ugc').toUpperCase())).join(' / ')}</span>`).join('')}
+    <span class="fh">Use the duplicate filter, then keep the best verified row and delete the rest.</span>`;
+}
+
 function renderKolTable(){
   let list = S.kols.filter(k => (k.type||'ugc') === kolTab);
   if(kolViewFilter === 'all'){
@@ -241,6 +393,21 @@ function renderKolTable(){
   } else {
     list = list.filter(k => k.stage === kolViewFilter);
   }
+  const q = kolFilters.q.toLowerCase();
+  list = list.filter(k => {
+    if(kolFilters.platform && k.platform !== kolFilters.platform) return false;
+    if(kolFilters.tier && followerTier(k) !== kolFilters.tier) return false;
+    if(kolFilters.creatorClass && inferredCreatorClass(k) !== kolFilters.creatorClass) return false;
+    if(kolFilters.market === '_unset' && k.audienceMarket) return false;
+    if(kolFilters.market && kolFilters.market !== '_unset' && k.audienceMarket !== kolFilters.market) return false;
+    if(kolFilters.dupes === 'only' && !duplicateInfoFor(k)) return false;
+    if(q){
+      const hay = [k.handle, k.name, k.platform, k.tier, k.followers, k.audience, k.sourceAgency,
+        inferredCreatorClass(k), k.notes, k.recentBrandPosts, k.avgViews, k.avgGmv, k.gpm].join(' ').toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
 
   el('kolEmpty').hidden = list.length > 0;
   if(!list.length){
@@ -254,10 +421,13 @@ function renderKolTable(){
   const v = x => x ? esc(x) : '<span class="nv">not verified</span>';
   const handleCell = k => {
     const url = profileUrl(k);
+    const dup = duplicateInfoFor(k);
     const b = url
       ? `<a href="${esc(url)}" target="_blank" rel="noopener" class="k-handle-link">${esc(k.handle)}</a>`
       : esc(k.handle);
-    return `<b>${b}</b><span class="sub">${esc(k.platform||'')}${k.name?' · '+esc(k.name):''}</span>`;
+    return `<b>${b}</b>${dup?` <span class="dup-badge" title="Same handle appears ${dup.length} times in the roster">duplicate</span>`:''}
+      <span class="sub">${esc(k.platform||'')}${k.name?' · '+esc(k.name):''}</span>
+      ${k.recentBrandPosts?`<span class="sub">60-day brands: ${esc(k.recentBrandPosts).slice(0,120)}${String(k.recentBrandPosts).length>120?'...':''}</span>`:''}`;
   };
   const contactCell = k => k.contact
     ? `${esc(k.contact)}${k.contactMethod?` <span class="pill p-n">${esc(k.contactMethod)}</span>`:''}`
@@ -271,18 +441,23 @@ function renderKolTable(){
   };
 
   const head = kolTab === 'ugc'
-    ? `<th>Creator</th><th>Tier</th><th class="n">Followers</th><th class="n">Engagement</th>
-       <th class="n">Posts</th><th>Audience</th><th>Contact</th><th class="n">Rate</th><th>Schedule</th><th>Stage</th><th></th>`
-    : `<th>Creator</th><th class="n">Followers</th><th class="n">Avg views</th><th class="n">GPM</th>
-       <th>Band</th><th class="n">Fit</th><th>Recommended terms</th><th>Contact</th><th>Schedule</th><th>Stage</th><th></th>`;
+    ? `<th>Creator</th><th>Remark</th><th>Tier</th><th class="n">Followers</th><th class="n">Score</th><th>Rating</th>
+       <th class="n">Engagement</th><th class="n">Posts</th><th>Contact</th><th class="n">Rate</th><th>Schedule</th><th>Stage</th><th></th>`
+    : `<th>Creator</th><th>Remark</th><th class="n">Followers</th><th class="n">Avg views</th><th class="n">GPM</th>
+       <th class="n">ROAS</th><th class="n">Score</th><th>Rating</th><th class="n">Fit</th><th>Recommended terms</th><th>Contact</th><th>Stage</th><th></th>`;
 
   el('kolTable').innerHTML = `<thead><tr>${head}</tr></thead><tbody>` + list.map(k => {
     const i = S.kols.indexOf(k);
     const del = canDelete(k);
     const stageSel = `<select class="k-stage" data-i="${i}">${KOL_PIPE.map(s =>
       `<option value="${s.k}"${k.stage===s.k?' selected':''}>${s.name}</option>`).join('')}</select>`;
+    const clsSel = `<select class="k-class" data-class="${i}">
+      ${['Creator','Artiste'].map(c => `<option value="${c}"${inferredCreatorClass(k)===c?' selected':''}>${c}</option>`).join('')}</select>`;
+    const rating = creatorRating(k);
+    const score = creatorScore(k);
     const acts = `<div class="k-acts">
       <button class="btn-line sm" data-edit="${i}">Edit</button>
+      <button class="btn-line sm" data-card="${i}">Card</button>
       ${kolTab==='live'?`<button class="btn-line sm" data-fit="${i}">Fit</button>`:''}
       <button class="btn-line sm" data-sched="${i}">Schedule</button>
       <button class="btn-line sm" data-brief="${i}">Brief</button>
@@ -291,12 +466,14 @@ function renderKolTable(){
     </div>`;
 
     if(kolTab === 'ugc'){
-      return `<tr><td>${handleCell(k)}</td>
-        <td><span class="pill p-n">${esc(k.tier||'—')}</span></td>
+      return `<tr class="${duplicateInfoFor(k)?'dup-row':''}"><td>${handleCell(k)}</td>
+        <td>${clsSel}</td>
+        <td><span class="pill p-n">${esc(followerTier(k)||k.tier||'—')}</span></td>
         <td class="n">${v(k.followers)}</td>
+        <td class="n" title="${esc(metricHelp(k))}">${score}/100</td>
+        <td><span class="pill ${rating.tone}" title="${esc(rating.why)}">${esc(rating.label)}</span></td>
         <td class="n">${k.er?esc(k.er)+'%':'<span class="nv">—</span>'}</td>
         <td class="n">${v(k.posts)}</td>
-        <td style="font-size:12px">${v(k.audience)}</td>
         <td style="font-size:12px">${contactCell(k)}</td>
         <td class="n">${k.rate?esc(S.settings.cur+k.rate):'<span class="nv">—</span>'}${kolPendingBadge(k,'rate')}</td>
         <td>${schedCell(k)}</td>
@@ -306,25 +483,34 @@ function renderKolTable(){
     const g = computeGpm(k);
     const band = gpmBand(g);
     const sc = scenarioFor(k);
-    const score = fitScore(k);
+    const fit = fitScore(k);
+    const roas = creatorRoas(k);
     const hasAgreed = k.commission || k.fee;
     const termsCell = hasAgreed
       ? `<span class="pill p-g">Agreed</span>
          <span class="sub">${k.fee?esc(S.settings.cur+k.fee):'no fixed fee'}${k.commission?' + '+esc(k.commission):''}</span>`
       : `<span class="pill ${sc.tone}">${sc.name}</span>
          <span class="sub">${sc.fee?S.settings.cur+sc.fee.toLocaleString()+' + '+sc.comm+'%':'commission only'}${sc.capped?' · capped':''}</span>`;
-    return `<tr><td>${handleCell(k)}</td>
+    return `<tr class="${duplicateInfoFor(k)?'dup-row':''}"><td>${handleCell(k)}</td>
+      <td>${clsSel}</td>
       <td class="n">${v(k.followers)}</td>
       <td class="n">${v(k.avgViews)}</td>
       <td class="n">${g?'$'+Math.round(g).toLocaleString():'<span class="nv">—</span>'}</td>
-      <td><span class="pill ${band.tone}">${band.label}</span></td>
-      <td class="n"><span class="fit-s ${score>=10?'f3':score>=8?'f2':score>=5?'f1':'f0'}">${score}/10</span></td>
+      <td class="n" title="${esc(metricHelp(k))}">${roas ? roas.toFixed(1)+'×' : '<span class="nv">—</span>'}</td>
+      <td class="n" title="${esc(metricHelp(k))}">${score}/100</td>
+      <td><span class="pill ${rating.tone}" title="${esc(rating.why)}">${esc(rating.label)}</span></td>
+      <td class="n"><span class="fit-s ${fit>=10?'f3':fit>=8?'f2':fit>=5?'f1':'f0'}">${fit}/10</span></td>
       <td>${termsCell}</td>
       <td style="font-size:12px">${contactCell(k)}</td>
-      <td>${schedCell(k)}</td>
       <td>${stageSel}</td><td>${acts}</td></tr>`;
   }).join('') + `</tbody>`;
 
+  qsa('.k-class').forEach(s => s.addEventListener('change', () => {
+    const k = S.kols[+s.dataset.class];
+    k.creatorClass = s.value;
+    k.updatedAt = new Date().toISOString();
+    save(); renderKolTable(); renderDuplicateWatch();
+  }));
   qsa('.k-stage').forEach(s => s.addEventListener('change', () => {
     const k = S.kols[+s.dataset.i];
     const next = KOL_PIPE.find(p => p.k === s.value);
@@ -335,6 +521,7 @@ function renderKolTable(){
     k.stage = s.value; k.updatedAt = new Date().toISOString(); save(); renderKol(); renderOverview();
   }));
   qsa('[data-edit]').forEach(b => b.addEventListener('click', () => kolForm(+b.dataset.edit)));
+  qsa('[data-card]').forEach(b => b.addEventListener('click', () => showCreatorCard(+b.dataset.card)));
   qsa('[data-fit]').forEach(b => b.addEventListener('click', () => fitForm(+b.dataset.fit)));
   qsa('[data-sched]').forEach(b => b.addEventListener('click', () => schedForm(+b.dataset.sched)));
   qsa('[data-brief]').forEach(b => b.addEventListener('click', () => showCreatorBrief(+b.dataset.brief)));
@@ -363,9 +550,18 @@ function kolForm(idx, pre){
           `<option${k.platform===p?' selected':''}>${p}</option>`).join('')}</select></div></div>
     <div class="mf2">${f('kName','Display name',k.name)}
       <div class="mf"><label>Tier</label><select id="kTier">
-        ${['Nano','Micro','Macro'].map(t=>`<option${k.tier===t?' selected':''}>${t}</option>`).join('')}</select></div></div>
+        ${['Nano','Micro','Macro','Mega'].map(t=>`<option${k.tier===t?' selected':''}>${t}</option>`).join('')}</select></div></div>
+    <div class="mf2"><div class="mf"><label>Remark</label><select id="kCreatorClass">
+        ${['Creator','Artiste'].map(c=>`<option value="${c}"${inferredCreatorClass(k)===c?' selected':''}>${c}</option>`).join('')}</select>
+        <p class="fh">Use Artiste for talent/rate-sheet records; Creator for normal KOL/UGC/live records.</p></div>
+      ${f('kRecentBrandPosts','Past brand posts in last 60 days',k.recentBrandPosts,'brand/date/link summary only if verified')}</div>
     <div class="mf2">${f('kFoll','Followers',k.followers,'blank if unverified')}
       ${f('kAud','Audience',k.audience,'e.g. 82% female · 25–34 · SG')}</div>
+    <div class="mf2"><div class="mf"><label>Primary audience market</label><select id="kMarket">
+        <option value=""${!k.audienceMarket?' selected':''}>Not verified</option>
+        ${AUDIENCE_MARKETS.map(m=>`<option value="${m}"${k.audienceMarket===m?' selected':''}>${m}</option>`).join('')}</select>
+        <p class="fh">Set only once platform-native audience insights confirm this market is over 50% of the audience.</p></div>
+      <div class="mf"></div></div>
     <div class="mf2">${f('kContact','Contact',k.contact,'email, agency, or DM open')}
       <div class="mf"><label>Contact method</label><select id="kContactMethod">
         <option value=""${!k.contactMethod?' selected':''}>Not set</option>
@@ -434,6 +630,10 @@ function kolForm(idx, pre){
     if(a === 'del'){ delKol(idx); return true; }
     const h = el('kHandle').value.trim();
     if(!h){ toast('A handle is required'); return false; }
+    if(looksLikeFollowerCount(h)){
+      toast('That looks like a follower count, not a handle — check the source row and enter the real @handle');
+      return false;
+    }
     const picked = qs('input[name=ktype]:checked');
     const existing = idx>=0 ? S.kols[idx] : null;
     const rec = Object.assign({}, existing || {}, {
@@ -442,7 +642,10 @@ function kolForm(idx, pre){
       handle: h.startsWith('@') ? h : '@'+h,
       platform: el('kPlat').value, name: el('kName').value.trim(),
       tier: el('kTier').value, followers: el('kFoll').value.trim(),
-      audience: el('kAud').value.trim(), contact: el('kContact').value.trim(),
+      audience: el('kAud').value.trim(), audienceMarket: el('kMarket').value,
+      contact: el('kContact').value.trim(),
+      creatorClass: el('kCreatorClass').value,
+      recentBrandPosts: el('kRecentBrandPosts').value.trim(),
       contactMethod: el('kContactMethod').value,
       source: el('kSource').value.trim(), sourceAgency: el('kSourceAgency').value.trim(),
       proofLink: el('kProofLink').value.trim(), adCode: el('kAdCode').value.trim(),
@@ -485,6 +688,42 @@ function kolForm(idx, pre){
   qsa('.tp input').forEach(r => r.addEventListener('change', () => {
     closeModal(); kolForm(idx, Object.assign({}, k, { type: r.value }));
   }));
+}
+
+function showCreatorCard(idx){
+  const k = S.kols[idx];
+  if(!k) return;
+  const g = computeGpm(k);
+  const roas = creatorRoas(k);
+  const rating = creatorRating(k);
+  const dup = duplicateInfoFor(k);
+  const sc = scenarioFor(k);
+  modal(`Creator card — ${k.handle || 'creator'}`, `
+    <div class="creator-card">
+      <div class="cc-top">
+        <div><b>${esc(k.handle || '')}</b><span>${esc(k.platform || '')}${k.name?' · '+esc(k.name):''}</span></div>
+        <span class="pill ${rating.tone}">${esc(rating.label)}</span>
+      </div>
+      ${dup?`<div class="dup-note"><b>Potential duplicate.</b> Same handle appears ${dup.length} times: ${dup.map(x => esc((x.k.type||'ugc').toUpperCase() + ' / ' + (x.k.stage||''))).join(', ')}.</div>`:''}
+      <div class="cc-grid">
+        <div><span>Remark</span><b>${esc(inferredCreatorClass(k))}</b></div>
+        <div><span>Tier</span><b>${esc(followerTier(k) || k.tier || 'not verified')}</b></div>
+        <div><span>Followers</span><b>${esc(k.followers || 'not verified')}</b></div>
+        <div><span>Market &gt;50%</span><b>${esc(k.audienceMarket || 'not verified')}</b></div>
+        <div><span>Score</span><b>${creatorScore(k)}/100</b></div>
+        <div><span>Fit</span><b>${fitScore(k)}/10</b></div>
+        <div><span>GPM</span><b>${g ? '$' + Math.round(g).toLocaleString() : 'not verified'}</b></div>
+        <div><span>ROAS</span><b>${roas ? roas.toFixed(1) + '×' : 'not verified'}</b></div>
+        <div><span>Recommended</span><b>${esc(sc.name)}</b></div>
+      </div>
+      <div class="cc-note"><b>How this is derived</b><p>${esc(metricHelp(k))}</p></div>
+      <div class="cc-note"><b>60-day brand posts</b><p>${esc(k.recentBrandPosts || 'Not verified yet. Add brand/date/link evidence from TikTok, Instagram, affiliate storefront, or agency sheet.')}</p></div>
+      <div class="cc-note"><b>Notes</b><p>${esc(k.notes || 'No notes recorded.')}</p></div>
+      ${k.source?`<a class="src-ln" href="${esc(k.source)}" target="_blank" rel="noopener">Open source</a>`:''}
+    </div>`, [['Close','x'],['Edit','edit']], a => {
+      if(a === 'edit'){ kolForm(idx); return true; }
+      return true;
+    });
 }
 
 function delKol(idx){
@@ -846,14 +1085,20 @@ function renderKolSchedule(){
 function renderKolScheduleBoard(){
   const box = el('kolSchedBoard'); if(!box) return;
   const all = S.schedule || [];
+  const list = schedBoardFilters.type ? all.filter(e => e.type === schedBoardFilters.type) : all;
 
-  box.innerHTML = `<div class="sched-board">${SCHED_BOARD.map(col => {
-    const cards = all.filter(e => schedBoardOf(e) === col.k);
+  const filterBar = `<div class="sched-board-filters">
+    <select id="schedBoardTypeFilter"><option value="">Both — UGC and Livestream</option>
+      ${Object.values(KOL_TYPES).map(t => `<option value="${t.k}"${schedBoardFilters.type===t.k?' selected':''}>${esc(t.name)} only</option>`).join('')}</select>
+  </div>`;
+
+  box.innerHTML = filterBar + `<div class="sched-board">${SCHED_BOARD.map(col => {
+    const cards = list.filter(e => schedBoardOf(e) === col.k);
     return `<div class="sched-col" data-col="${col.k}">
       <div class="sched-col-h">${esc(col.name)}<span class="sched-col-n">${cards.length}</span></div>
       <div class="sched-col-body" data-coldrop="${col.k}">
         ${cards.map(e => `<div class="sched-card" draggable="true" data-cardid="${e.id}">
-          <b>${esc(e.kol)}</b>
+          <div class="sc-top"><b>${esc(e.kol)}</b><span class="pill ${KOL_TYPES[e.type]?KOL_TYPES[e.type].pill:'p-n'}">${KOL_TYPES[e.type]?KOL_TYPES[e.type].short:'—'}</span></div>
           <span class="sub">${esc(e.what)}</span>
           <span class="sc-date">${esc(e.date)}${e.time?' · '+esc(e.time):''}</span>
           ${e.feeAgreed ? `<span class="sc-fee">${esc(S.settings.cur+e.feeAgreed)} · ${
@@ -863,6 +1108,10 @@ function renderKolScheduleBoard(){
       </div>
     </div>`;
   }).join('')}</div>`;
+
+  el('schedBoardTypeFilter').addEventListener('change', e => {
+    schedBoardFilters.type = e.target.value; renderKolScheduleBoard();
+  });
 
   qsa('.sched-card', box).forEach(card => {
     card.addEventListener('dragstart', ev => {
@@ -1269,30 +1518,34 @@ function renderKolBudgetDrilldown(){
 
 function renderKolActivation(){
   const box = el('kolActivation'); if(!box) return;
-  const list = (S.kols || []).filter(k => k.stage === 'approved' || k.stage === 'running' || k.stage === 'done');
+  const list = (S.kols || []).filter(k => ['approved','scheduled','live','done'].includes(k.stage));
   if(!list.length){
-    box.innerHTML = `<p class="empty">No approved or running creators yet. Move shortlisted creators forward in the pipeline to populate activation benchmarking.</p>`;
+    box.innerHTML = `<p class="empty">No approved, scheduled, delivering, or complete creators yet. Move shortlisted creators forward to populate score, rating, GPM, ROAS and fit benchmarks here.</p>`;
     return;
   }
 
   const rows = list.map(k => {
     const gpm = computeGpm(k);
-    const roasBenchmark = k.type === 'live' ? '2.5x+' : '1.8x+';
+    const roas = creatorRoas(k);
+    const rating = creatorRating(k);
     const kpi = k.type === 'live' ? 'GMV and conversion rate' : 'Review volume and CAC';
     return `<tr>
       <td><b>${esc(k.handle || '')}</b><span class="sub">${esc(k.type || 'ugc')} · ${esc(k.platform || '')}</span></td>
       <td class="n">${k.fee ? esc(S.settings.cur + k.fee) : '—'}</td>
       <td class="n">${gpm ? ('$' + Math.round(gpm).toLocaleString()) : '—'}</td>
-      <td class="n">${esc(roasBenchmark)}</td>
+      <td class="n">${roas ? roas.toFixed(1) + '×' : '—'}</td>
+      <td class="n">${creatorScore(k)}/100</td>
+      <td><span class="pill ${rating.tone}">${esc(rating.label)}</span></td>
+      <td class="n">${fitScore(k)}/10</td>
       <td>${esc(kpi)}</td>
       <td>${esc((KOL_PIPE.find(x => x.k === k.stage) || {}).name || k.stage || '')}</td>
     </tr>`;
   }).join('');
 
   box.innerHTML = `<div class="tb-wrap"><table class="tb">
-    <thead><tr><th>Creator</th><th class="n">Fee</th><th class="n">GPM</th><th class="n">ROAS benchmark</th><th>KPI</th><th>Status</th></tr></thead>
+    <thead><tr><th>Creator</th><th class="n">Fee</th><th class="n">GPM</th><th class="n">ROAS</th><th class="n">Score</th><th>Rating</th><th class="n">Fit</th><th>KPI</th><th>Status</th></tr></thead>
     <tbody>${rows}</tbody>
-  </table></div>`;
+  </table></div><p class="fh">Score/rating/ROAS derive from verified roster fields only; blanks mean the source data is not recorded yet.</p>`;
 }
 
 /* Schedule Table/Board/Calendar toggle — static buttons, wired once. */

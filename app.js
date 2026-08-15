@@ -69,6 +69,12 @@ function normalizeState(obj){
   // A plan saved before shipping/handling existed won't have them on each
   // SKU — backfill rather than let the floor formula read undefined as 0
   // silently everywhere (explicit here, once, instead of scattered ||0s).
+  s.kols.forEach(k => {
+    const raw = [k.creatorClass, k.creatorRemark, k.tier, k.sourceAgency, k.source, k.notes].join(' ').toLowerCase();
+    if(!k.creatorClass) k.creatorClass = (raw.includes('artiste') || raw.includes('bloomrs')) ? 'Artiste' : 'Creator';
+    if(k.recentBrandPosts == null) k.recentBrandPosts = '';
+    if(k.audienceMarket == null) k.audienceMarket = '';
+  });
   s.skus.forEach(sk => {
     if(sk.shipping == null) sk.shipping = 0;
     if(sk.handling == null) sk.handling = 0;
@@ -1559,7 +1565,7 @@ Report these fields:
 5. Whether they have a shop or affiliate storefront, and any publicly disclosed GMV or sales volume
 6. Audience breakdown — gender split, top age bands, top locations
 7. Public contact route — business email in bio, management agency, or whether DMs are open
-8. Recent brand partnerships in skincare or beauty, with dates
+8. Recent brand partnerships in skincare or beauty from the last 60 days only, with post links and dates
 9. Whether the account shows signs of inauthentic following
 
 FORMAT
@@ -1572,7 +1578,9 @@ RULES — these override any instinct to be helpful:
 · If you cannot find the account at all, say so plainly and stop. Do not offer a similar account instead.
 · Do not generate sample, placeholder or illustrative data under any circumstances.
 
-If most fields come back NOT VERIFIED, say so directly so I know to check the creator's storefront and marketplace affiliate pages manually instead.`;
+If most fields come back NOT VERIFIED, say so directly so I know to check the creator's storefront and marketplace affiliate pages manually instead.
+
+Also return a short "recentBrandPosts" text line suitable for a CRM note. Include only verified brand/date/link evidence from the last 60 days; otherwise write NOT VERIFIED.`;
 }
 
 el('genPrompt').addEventListener('click', () => {
@@ -1800,9 +1808,15 @@ el('apifyBtn').addEventListener('click', () => {
           followers:d.followers || d.followersCount || '',
           er:       d.engagementRate || '',
           posts:    d.posts || d.videosCount || '',
-          gmv:      d.gmv || '',
+          avgGmv:   d.avgGmv || d.gmv || '',
+          avgViews: d.avgViews || d.averageViews || '',
+          gpm:      d.gpm || '',
           audience: d.audience || '',
-          contact:  d.email || d.contact || ''
+          audienceMarket: AUDIENCE_MARKETS.includes(String(d.audienceMarket||d.audience_market||'').toUpperCase())
+            ? String(d.audienceMarket||d.audience_market).toUpperCase() : '',
+          contact:  d.email || d.contact || '',
+          creatorClass: d.creatorClass || d.creator_class || '',
+          recentBrandPosts: d.recentBrandPosts || d.recent_brand_posts || ''
         });
         return true;
       }catch(e){ toast('That is not valid JSON'); return false; }
@@ -1812,10 +1826,10 @@ el('apifyBtn').addEventListener('click', () => {
 const kolTplBtn = el('kolTpl');
 if(kolTplBtn) kolTplBtn.addEventListener('click', () => {
   const rows = [
-    ['type','handle','platform','name','tier','followers','audience','contact','contactMethod','source','sourceAgency',
-     'er','posts','rate','avgViews','avgGmv','gpm','retention','fee','commission','paymentTerms','proofLink','adCode','notes','stage'],
-    ['ugc','@creator_handle','TikTok','Creator Name','Nano','','','','','','','','','','','','','','','','','','','',''],
-    ['live','@live_handle','TikTok','Live Seller','Micro','','','','','','','','','','12000','6000','','6m 20s','200','','','','','','']
+    ['type','handle','platform','name','tier','followers','audience','audienceMarket','contact','contactMethod','source','sourceAgency',
+     'creatorClass','recentBrandPosts','er','posts','rate','avgViews','avgGmv','gpm','retention','fee','commission','paymentTerms','proofLink','adCode','notes','stage'],
+    ['ugc','@creator_handle','TikTok','Creator Name','Nano','','','','','','','','Creator','','','','','','','','','','','','','','',''],
+    ['live','@live_handle','TikTok','Live Seller','Micro','','','','','','','','Creator','','','','','12000','6000','','6m 20s','200','','','','','','']
   ];
   if(typeof toCSV === 'function' && typeof dl === 'function'){
     dl('dnuvo-kol-import-template-' + stamp() + '.csv', toCSV(rows), 'text/csv;charset=utf-8');
@@ -1835,27 +1849,69 @@ if(kolImportBtn && kolImportFile){
     r.onload = () => {
       if(typeof parseCsvObjects !== 'function'){ toast('CSV parser not available'); return; }
       const rowsIn = parseCsvObjects(String(r.result || ''));
-      // Keyed on type+handle, not handle alone — the same person can legitimately
-      // have both a UGC and a Livestream record, since this app tracks those as
-      // two separate rosters evaluated on different things.
-      const existingIdx = new Map(S.kols.map((k,i) => [(k.type||'ugc') + '|' + (k.handle||'').toLowerCase(), i]));
-      let added = 0, updated = 0, skipped = 0;
+      // Keyed on handle alone. A repeated handle is the same creator for roster
+      // hygiene, even when the source file labels one row UGC and another Live.
+      const hkey = h => String(h || '').trim().toLowerCase().replace(/^@+/, '');
+      const existingIdx = new Map(S.kols.map((k,i) => [hkey(k.handle), i]).filter(x => x[0]));
+      // A follower count that leaked into the handle column upstream (e.g.
+      // "@2,308", "@50k") is not a real @handle — reject it here so it can't
+      // enter the roster from any CSV, not just the one it was first caught in.
+      const badHandle = h => /^[\d,.]+[kKmM]?$/.test(hkey(h));
+      const normalizePlatform = p => {
+        const t = String(p || '').trim();
+        const low = t.toLowerCase();
+        if(low === 'ig' || low === 'instagram') return 'Instagram';
+        if(low === 'tiktok') return 'TikTok';
+        if(low === 'youtube') return 'YouTube';
+        if(low === 'shopee live') return 'Shopee Live';
+        if(low === 'xiaohongshu') return 'Xiaohongshu';
+        return t || 'TikTok';
+      };
+      // Accepts either the internal stage key or a human display name from
+      // KOL_PIPE (case-insensitive) — agency/export sheets tend to carry the
+      // display name. "Done"/"Complete" only lands on the locked done stage
+      // when the row also carries proof; otherwise it lands on Delivering
+      // rather than falsely claiming a deliverable is complete.
+      const normalizeStage = (raw, hasProof) => {
+        const t = String(raw || '').trim();
+        if(!t) return 'sourced';
+        const byKey = KOL_PIPE.find(s => s.k === t);
+        if(byKey) return (byKey.k === 'done' && !hasProof) ? 'live' : byKey.k;
+        const byName = KOL_PIPE.find(s => s.name.toLowerCase() === t.toLowerCase());
+        if(byName) return (byName.k === 'done' && !hasProof) ? 'live' : byName.k;
+        if(/^complete$/i.test(t)) return hasProof ? 'done' : 'live';
+        return 'sourced';
+      };
+      let added = 0, updated = 0, skipped = 0, duplicateRows = 0, badHandleRows = 0;
+      const seenFile = new Set();
       rowsIn.forEach(x => {
         if(!x.handle) return;
         const handle = x.handle.startsWith('@') ? x.handle : ('@' + x.handle);
+        if(badHandle(handle)){ badHandleRows++; skipped++; return; }
         const type = (x.type === 'live' ? 'live' : 'ugc');
-        const key = type + '|' + handle.toLowerCase();
-        const stage = KOL_PIPE.find(s => s.k === (x.stage||'').trim()) ? x.stage.trim() : 'sourced';
+        const key = hkey(handle);
+        if(seenFile.has(key)){ duplicateRows++; skipped++; return; }
+        seenFile.add(key);
+        const proofLink = x.prooflink || '';
+        const stage = normalizeStage(x.stage, !!proofLink);
         const commission = COMMISSION_OPTIONS.includes((x.commission||'').trim()) ? x.commission.trim() : '';
+        const classRaw = [x.creatorclass, x.creator_class, x.creatorremark, x.creator_remark, x.tier, x.sourceagency, x.source, x.notes].join(' ').toLowerCase();
+        const creatorClass = String(x.creatorclass || x.creator_class || x.creatorremark || x.creator_remark || '').trim()
+          || ((classRaw.includes('artiste') || classRaw.includes('bloomrs')) ? 'Artiste' : 'Creator');
+        const marketRaw = String(x.audiencemarket || x.audience_market || x.market || '').trim().toUpperCase();
         const fields = {
-          type, handle, platform: x.platform || 'TikTok',
+          type, handle, platform: normalizePlatform(x.platform),
           name: x.name || '', tier: x.tier || 'Nano',
-          followers: x.followers || '', audience: x.audience || '', contact: x.contact || '',
+          followers: x.followers || '', audience: x.audience || '',
+          audienceMarket: AUDIENCE_MARKETS.includes(marketRaw) ? marketRaw : '',
+          contact: x.contact || '',
           contactMethod: CONTACT_METHODS.includes((x.contactmethod||'').trim()) ? x.contactmethod.trim() : '',
           source: x.source || '', sourceAgency: x.sourceagency || '',
+          creatorClass: creatorClass === 'Artiste' ? 'Artiste' : 'Creator',
+          recentBrandPosts: x.recentbrandposts || x.recent_brand_posts || x.brandposts60days || x.brand_posts_60_days || '',
           er: x.er || '', posts: x.posts || '', rate: x.rate || '',
           avgViews: x.avgviews || '', avgGmv: x.avggmv || '', gpm: x.gpm || '', retention: x.retention || '', fee: x.fee || '',
-          commission, paymentTerms: x.paymentterms || '', proofLink: x.prooflink || '', adCode: x.adcode || '',
+          commission, paymentTerms: x.paymentterms || '', proofLink, adCode: x.adcode || '',
           notes: x.notes || '', stage, updatedAt: new Date().toISOString()
         };
         if(existingIdx.has(key)){
@@ -1872,15 +1928,17 @@ if(kolImportBtn && kolImportFile){
         existingIdx.set(key, S.kols.length - 1);
         added++;
       });
-      if(added || updated){
+        if(added || updated){
         save(); if(typeof renderKol === 'function') renderKol(); renderOverview();
         const parts = [];
         if(added) parts.push(added + ' added');
         if(updated) parts.push(updated + ' updated');
         if(skipped) parts.push(skipped + ' skipped (already in roster)');
+        if(duplicateRows) parts.push(duplicateRows + ' duplicate rows inside file');
+        if(badHandleRows) parts.push(badHandleRows + ' rejected (handle looked like a follower count)');
         toast(parts.join(', '));
       }
-      else toast(skipped ? 'All ' + skipped + ' rows were already in the roster' : 'No valid creator rows found');
+      else toast(skipped ? 'All ' + skipped + ' rows were duplicate, already in the roster, or had a follower-count handle' : 'No valid creator rows found');
     };
     r.readAsText(f);
     e.target.value = '';
@@ -1889,16 +1947,47 @@ if(kolImportBtn && kolImportFile){
 
 const kolAiPickBtn = el('kolAiPick');
 if(kolAiPickBtn) kolAiPickBtn.addEventListener('click', () => {
-  const list = (S.kols || []).map(k => {
+  const rankRows = mode => (S.kols || []).map(k => {
     const gpm = (typeof computeGpm === 'function') ? computeGpm(k) : 0;
-    const score = (typeof fitScore === 'function') ? fitScore(k) : 0;
-    const rank = Math.round(gpm / 100) + score;
-    return { rank, gpm, score, k };
-  }).sort((a,b) => b.rank - a.rank).slice(0, 8);
-  modal('AI shortlist (best fit first)', `<div class="tb-wrap"><table class="tb">
-    <thead><tr><th>Creator</th><th>Type</th><th class="n">GPM</th><th class="n">Fit</th><th class="n">Rank</th></tr></thead>
-    <tbody>${list.map(x => `<tr><td><b>${esc(x.k.handle || '')}</b></td><td>${esc(x.k.type || 'ugc')}</td><td class="n">${x.gpm ? ('$' + Math.round(x.gpm)) : '—'}</td><td class="n">${x.score}/10</td><td class="n">${x.rank}</td></tr>`).join('')}</tbody>
-  </table></div><p class="fh">Use as recommendation only. Keep verified-data standards before activation.</p>`, [['Close','x']], () => true);
+    const fit = (typeof fitScore === 'function') ? fitScore(k) : 0;
+    const score = (typeof creatorScore === 'function') ? creatorScore(k) : 0;
+    const roas = (typeof creatorRoas === 'function') ? creatorRoas(k) : 0;
+    const verified = (typeof verifiedFieldCount === 'function') ? verifiedFieldCount(k) : 0;
+    const rating = (typeof creatorRating === 'function') ? creatorRating(k) : { label:'Incomplete', tone:'p-r' };
+    let rank = score;
+    if(mode === 'live') rank = (k.type === 'live' ? 30 : 0) + fit * 6 + Math.min(40, Math.round(gpm / 15)) + Math.min(20, roas * 5);
+    if(mode === 'ugc') rank = (k.type === 'ugc' ? 30 : 0) + score + (k.proofLink ? 15 : 0);
+    if(mode === 'risk') rank = verified * 12 + (k.contact ? 10 : 0) + (k.fee || k.rate ? 0 : 10) + (duplicateInfoFor(k) ? -25 : 0);
+    if(mode === 'data') rank = verified * 14 + (k.source ? 15 : 0) + (k.recentBrandPosts ? 15 : 0);
+    const basis = [
+      `score ${score}/100`,
+      k.type === 'live' ? `fit ${fit}/10` : `tier ${followerTier(k) || 'unknown'}`,
+      gpm ? `GPM $${Math.round(gpm)}` : 'GPM not verified',
+      roas ? `ROAS ${roas.toFixed(1)}x` : 'ROAS not verified',
+      `${verified} verified fields`
+    ].join(' · ');
+    return { rank: Math.round(rank), gpm, fit, score, roas, rating, basis, k };
+  }).sort((a,b) => b.rank - a.rank).slice(0, 12);
+  const table = mode => `<div class="tb-wrap"><table class="tb">
+    <thead><tr><th>Creator</th><th>Type</th><th class="n">Rank</th><th>Rating</th><th>Basis</th></tr></thead>
+    <tbody>${rankRows(mode).map(x => `<tr>
+      <td><b>${esc(x.k.handle || '')}</b><span class="sub">${esc(x.k.platform || '')}${x.k.name?' · '+esc(x.k.name):''}</span></td>
+      <td>${esc(x.k.type || 'ugc')}</td>
+      <td class="n">${x.rank}</td>
+      <td><span class="pill ${x.rating.tone}">${esc(x.rating.label)}</span></td>
+      <td style="font-size:12px">${esc(x.basis)}</td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
+  modal('AI shortlist criteria', `
+    <div class="mf"><label>Recommendation basis</label><select id="aiKolMode">
+      <option value="live">Livestream sales efficiency</option>
+      <option value="ugc">UGC review/content proof</option>
+      <option value="risk">Lowest-risk outreach</option>
+      <option value="data">Best verified-data quality</option>
+    </select>
+    <p class="fh">The shortlist is a deterministic ranking from roster fields. It does not invent missing fit scores, followers, GMV, ROAS, or brand-post history.</p></div>
+    <div id="aiKolRows">${table('live')}</div>`, [['Close','x']], () => true);
+  el('aiKolMode').addEventListener('change', e => { el('aiKolRows').innerHTML = table(e.target.value); });
 });
 
 
