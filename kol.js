@@ -63,6 +63,26 @@ function duplicateInfoFor(k){
   const matches = (S.kols || []).map((x,i) => ({ k:x, i })).filter(x => normHandle(x.k.handle) === h);
   return matches.length > 1 ? matches : null;
 }
+/* Finds the leftover-from-an-old-bad-import shape: a record whose handle
+   is really just a follower count (the exact bug a shifted source-sheet
+   column produces), where its Display name field holds the creator's
+   actual handle text — because that's the one field the old import got
+   right. If another record on the roster already has that text as its
+   real handle, the numeric one is pure clutter with no data worth keeping
+   (it never had verified fields — that's what caused the mis-import in
+   the first place) and can be safely proposed for removal. */
+function numericHandleMergeCandidates(){
+  const list = S.kols || [];
+  const byHandle = new Map();
+  list.forEach((k,i) => { const h = normHandle(k.handle); if(h && !byHandle.has(h)) byHandle.set(h, i); });
+  return list.map((k,i) => ({ k, i }))
+    .filter(x => looksLikeFollowerCount(x.k.handle))
+    .map(x => {
+      const nameHandle = normHandle(x.k.name);
+      const matchIdx = nameHandle ? byHandle.get(nameHandle) : undefined;
+      return { bad:x.k, badIdx:x.i, match: (matchIdx!=null && matchIdx!==x.i) ? list[matchIdx] : null };
+    });
+}
 function followerTier(k){
   const explicit = String(k.tier || '').toLowerCase();
   if(explicit.includes('mega')) return 'Mega';
@@ -148,12 +168,36 @@ const KOL_STAGE_TABS = [
 ];
 
 /* ── evaluation ── */
+/* Fit factors this app can legitimately compute from stored data, layered
+   over the manual checklist. Everything else in FIT_FACTORS requires
+   someone to have actually reviewed the creator's content — auto-ticking
+   those would mean claiming "verified" with nobody having looked, which is
+   exactly what this checklist exists to prevent (see the Playbook note on
+   over-ticking). Returns null when there isn't enough data to judge either
+   way, so it neither ticks nor un-ticks a factor it can't actually assess. */
+const AUTO_FIT_FACTORS = {
+  retention: k => {
+    const m = String(k.retention || '').trim().match(/(\d+)\s*m/i);
+    return m ? (+m[1] >= 5) : null;
+  },
+  gpm: k => {
+    const g = computeGpm(k);
+    return g ? (g >= 200) : null;
+  }
+};
+function effectiveFit(k){
+  const out = Object.assign({}, k.fit || {});
+  Object.keys(AUTO_FIT_FACTORS).forEach(key => {
+    const v = AUTO_FIT_FACTORS[key](k);
+    if(v != null) out[key] = v; else delete out[key];
+  });
+  return out;
+}
 function fitScore(k){
-  const t = k.fit || {};
-  return FIT_FACTORS.filter(f => t[f.k]).length;
+  return FIT_FACTORS.filter(f => effectiveFit(k)[f.k]).length;
 }
 function criticalMissing(k){
-  const t = k.fit || {};
+  const t = effectiveFit(k);
   return FIT_FACTORS.filter(f => f.critical && !t[f.k]);
 }
 function gpmBand(g){
@@ -232,6 +276,7 @@ function renderKol(){
   renderDuplicateWatch();
   renderKolTable();
   renderKolContentAngles();
+  renderKolContentCuration();
   renderKolActivation();
   renderKolPayments();
   renderKolBudgetDrilldown();
@@ -377,11 +422,50 @@ function renderKolFilters(){
 function renderDuplicateWatch(){
   const box = el('kolDuplicateBox'); if(!box) return;
   const groups = duplicateHandleGroups();
-  box.hidden = !groups.length;
-  if(!groups.length){ box.innerHTML = ''; return; }
-  box.innerHTML = `<b>${groups.length} duplicate handle${groups.length===1?'':'s'} found.</b>
-    ${groups.map(([h, items]) => `<span class="dup-chip">@${esc(h)} · ${items.map(x => esc((x.k.type||'ugc').toUpperCase())).join(' / ')}</span>`).join('')}
-    <span class="fh">Use the duplicate filter, then keep the best verified row and delete the rest.</span>`;
+  const numeric = numericHandleMergeCandidates();
+  box.hidden = !groups.length && !numeric.length;
+  if(!groups.length && !numeric.length){ box.innerHTML = ''; return; }
+
+  const admin = isAdmin();
+  const matched = numeric.filter(x => x.match);
+  const unmatched = numeric.filter(x => !x.match);
+
+  box.innerHTML = `
+    ${groups.length ? `<div class="dup-section">
+      <b>${groups.length} duplicate handle${groups.length===1?'':'s'} found.</b>
+      ${groups.map(([h, items]) => `<span class="dup-chip">@${esc(h)} · ${items.map(x => esc((x.k.type||'ugc').toUpperCase())).join(' / ')}</span>`).join('')}
+      <span class="fh">Use the duplicate filter, then keep the best verified row and delete the rest.</span>
+    </div>` : ''}
+    ${matched.length ? `<div class="dup-section">
+      <b>${matched.length} numeric-looking handle${matched.length===1?'':'s'} matched to a real record.</b>
+      <span class="fh">Its Display name field holds the real handle, which already exists as its own record — the numeric row is leftover from an old bad import and never had verified data.</span>
+      ${matched.map(x => `<div class="dup-merge-row">
+        <span class="dup-chip bad">${esc(x.bad.handle)}</span><span class="dup-arrow">→</span><span class="dup-chip">${esc(x.match.handle)}</span>
+        ${admin
+          ? `<button class="btn-line sm danger" data-merge-del="${x.badIdx}">Delete ${esc(x.bad.handle)}</button>`
+          : `<span class="lock-t" title="Only an administrator can remove a roster record">🔒</span>`}
+      </div>`).join('')}
+    </div>` : ''}
+    ${unmatched.length ? `<div class="dup-section">
+      <b>${unmatched.length} numeric-looking handle${unmatched.length===1?'':'s'} with no clear match.</b>
+      ${unmatched.map(x => `<span class="dup-chip bad">${esc(x.bad.handle)}</span>`).join('')}
+      <span class="fh">No other record's handle matches this one's Display name — open Edit to check it by hand rather than assume.</span>
+    </div>` : ''}`;
+
+  qsa('[data-merge-del]', box).forEach(b => b.addEventListener('click', () => {
+    const idx = +b.dataset.mergeDel;
+    const k = S.kols[idx];
+    if(!k || !canDelete(k)) return;
+    const now = new Date().toISOString();
+    S.scheduleTombstones = S.scheduleTombstones || [];
+    (S.schedule||[]).filter(e => e.kol === k.handle).forEach(e => S.scheduleTombstones.push({ id:e.id, at:now }));
+    S.schedule = (S.schedule||[]).filter(e => e.kol !== k.handle);
+    S.kolTombstones = S.kolTombstones || [];
+    S.kolTombstones.push({ id:k.id, at:now });
+    S.kols.splice(idx,1);
+    save(); renderKol(); renderOverview();
+    toast('Removed ' + k.handle);
+  }));
 }
 
 function renderKolTable(){
@@ -763,15 +847,29 @@ function fitForm(idx){
   const k = S.kols[idx];
   k.fit = k.fit || {};
   const cats = [...new Set(FIT_FACTORS.map(f=>f.cat))];
+  const auto = effectiveFit(k);
+
+  const factorRow = f => {
+    if(AUTO_FIT_FACTORS[f.k]){
+      const v = AUTO_FIT_FACTORS[f.k](k);
+      const state = v == null ? 'not enough data yet' : (v ? 'yes — from stored data' : 'no — from stored data');
+      return `<label class="fit-i auto ${f.critical?'crit':''}">
+        <span class="fit-auto-mark">${v==null?'—':(v?'✓':'✕')}</span>
+        <span><b>${esc(f.name)}${f.critical?' <em>critical</em>':''} <em class="fit-auto-tag">auto</em></b>${esc(f.test)}
+          <i class="fit-auto-state">${esc(state)}</i></span></label>`;
+    }
+    return `<label class="fit-i ${f.critical?'crit':''}">
+      <input type="checkbox" data-fit="${f.k}"${k.fit[f.k]?' checked':''}>
+      <span><b>${esc(f.name)}${f.critical?' <em>critical</em>':''}</b>${esc(f.test)}</span></label>`;
+  };
 
   modal(`Fit check — ${k.handle}`, `
     <div class="fit-intro">Tick only what you have actually seen. The score sets which fee is rational —
-      over-ticking here is how a brand ends up paying a mega fee for a test-tier creator.</div>
+      over-ticking here is how a brand ends up paying a mega fee for a test-tier creator.
+      Rows marked <em class="fit-auto-tag">auto</em> are computed from this record's stored Retention and
+      GPM instead of ticked by hand — update those fields to change them, not this checklist.</div>
     ${cats.map(c => `<div class="fit-cat"><span class="fc-l">${esc(c)}</span>
-      ${FIT_FACTORS.filter(f=>f.cat===c).map(f => `
-        <label class="fit-i ${f.critical?'crit':''}">
-          <input type="checkbox" data-fit="${f.k}"${k.fit[f.k]?' checked':''}>
-          <span><b>${esc(f.name)}${f.critical?' <em>critical</em>':''}</b>${esc(f.test)}</span></label>`).join('')}
+      ${FIT_FACTORS.filter(f=>f.cat===c).map(factorRow).join('')}
     </div>`).join('')}
     <div id="fitOut"></div>`,
     [['Cancel','x'],['Save assessment','ok']], a => {
@@ -784,7 +882,8 @@ function fitForm(idx){
     });
 
   const upd = () => {
-    const tmp = {}; qsa('[data-fit]').forEach(c => tmp[c.dataset.fit] = c.checked);
+    const tmp = Object.assign({}, auto);
+    qsa('[data-fit]').forEach(c => { tmp[c.dataset.fit] = c.checked; });
     const fake = Object.assign({}, k, { fit: tmp });
     const score = FIT_FACTORS.filter(f=>tmp[f.k]).length;
     const crit = FIT_FACTORS.filter(f=>f.critical && !tmp[f.k]);
@@ -880,6 +979,129 @@ function renderKolContentAngles(){
       .catch(()=>toast('Select the text and copy manually'));
   }));
 }
+
+/* ── content curation — the missing link between briefing a creator and
+   putting them on the schedule. A content item tracks a single draft
+   (link only, no file storage — the app is static with no backend for
+   that) through Draft → Submitted → In review → Approved/Rejected.
+   Team can move anything up to In review; only an admin can make the
+   actual approve/reject call, same split as every other decision gate
+   in this hub. Approving surfaces a direct "Schedule" CTA so the next
+   step in the journey is one click away instead of a hunt. ── */
+let contentFilters = { kol:'', status:'' };
+function contentStatusName(k){ return (CONTENT_STATUSES.find(s => s.k === k) || {}).name || k; }
+function contentStatusTone(k){
+  return k === 'approved' ? 'p-g' : k === 'rejected' ? 'p-r' : k === 'review' ? 'p-a' : k === 'submitted' ? 'p-v' : 'p-n';
+}
+function renderKolContentCuration(){
+  const box = el('contentTable'); if(!box) return;
+  const filterBox = el('contentFilterBox');
+  if(filterBox){
+    const kols = [...new Set((S.content||[]).map(c => c.kol))].sort();
+    filterBox.innerHTML = `
+      <label>Creator <select id="contentKolFilter"><option value="">All</option>
+        ${kols.map(h => `<option value="${esc(h)}"${contentFilters.kol===h?' selected':''}>${esc(h)}</option>`).join('')}</select></label>
+      <label>Status <select id="contentStatusFilter"><option value="">All</option>
+        ${CONTENT_STATUSES.map(s => `<option value="${s.k}"${contentFilters.status===s.k?' selected':''}>${esc(s.name)}</option>`).join('')}</select></label>`;
+    el('contentKolFilter').addEventListener('change', e => { contentFilters.kol = e.target.value; renderKolContentCuration(); });
+    el('contentStatusFilter').addEventListener('change', e => { contentFilters.status = e.target.value; renderKolContentCuration(); });
+  }
+
+  let list = (S.content || []).slice().sort((a,b) => (b.updatedAt||'').localeCompare(a.updatedAt||''));
+  if(contentFilters.kol) list = list.filter(c => c.kol === contentFilters.kol);
+  if(contentFilters.status) list = list.filter(c => c.status === contentFilters.status);
+
+  const empty = el('contentEmpty');
+  if(empty) empty.hidden = list.length > 0;
+  if(!list.length){
+    box.innerHTML = '';
+    if(empty) empty.innerHTML = (S.content||[]).length
+      ? 'Nothing matches this filter.'
+      : 'No content items yet. Add one once a creator has a draft to review.';
+    return;
+  }
+
+  const admin = isAdmin();
+  box.innerHTML = `<thead><tr><th>Creator</th><th>Type</th><th>Link</th><th>Status</th><th>Notes</th><th>Updated</th><th></th></tr></thead><tbody>` +
+    list.map(c => {
+      const decided = c.status === 'approved' || c.status === 'rejected';
+      const statusCell = (admin || !decided)
+        ? `<select class="content-status" data-cid="${c.id}">
+            ${CONTENT_STATUSES.filter(s => admin || (s.k !== 'approved' && s.k !== 'rejected') || s.k === c.status)
+              .map(s => `<option value="${s.k}"${c.status===s.k?' selected':''}>${esc(s.name)}</option>`).join('')}
+          </select>`
+        : `<span class="pill ${contentStatusTone(c.status)}">${esc(contentStatusName(c.status))}</span>`;
+      const canDel = admin;
+      return `<tr>
+        <td><b>${esc(c.kol)}</b></td>
+        <td>${esc(c.type)}</td>
+        <td>${c.link ? `<a href="${esc(c.link)}" target="_blank" rel="noopener" class="k-handle-link">Open</a>` : '<span class="nv">not added</span>'}</td>
+        <td>${statusCell}</td>
+        <td style="font-size:12px;color:var(--mute)">${esc(c.notes||'')}</td>
+        <td class="n" style="font-size:11.5px;color:var(--faint)">${esc((c.updatedAt||'').slice(0,10))}</td>
+        <td><div class="k-acts">
+          ${c.status==='approved' ? `<button class="btn-line sm" data-content-sched="${esc(c.kol)}">Schedule</button>` : ''}
+          ${canDel ? `<button class="btn-line sm danger" data-content-del="${c.id}">Delete</button>` : `<span class="lock-t" title="Only an administrator can delete a content item">🔒</span>`}
+        </div></td></tr>`;
+    }).join('') + `</tbody>`;
+
+  qsa('.content-status', box).forEach(sel => sel.addEventListener('change', () => {
+    const item = (S.content||[]).find(x => x.id === sel.dataset.cid);
+    if(!item) return;
+    if((sel.value === 'approved' || sel.value === 'rejected') && !isAdmin()){
+      toast('Only an administrator can approve or reject content');
+      sel.value = item.status; return;
+    }
+    item.status = sel.value; item.updatedAt = new Date().toISOString();
+    save(); renderKolContentCuration();
+    toast('Status set to ' + contentStatusName(sel.value));
+  }));
+  qsa('[data-content-del]', box).forEach(b => b.addEventListener('click', () => {
+    S.contentTombstones = S.contentTombstones || [];
+    S.contentTombstones.push({ id:b.dataset.contentDel, at:new Date().toISOString() });
+    S.content = (S.content||[]).filter(x => x.id !== b.dataset.contentDel);
+    save(); renderKolContentCuration();
+    toast('Content item removed');
+  }));
+  qsa('[data-content-sched]', box).forEach(b => b.addEventListener('click', () => {
+    const idx = S.kols.findIndex(k => k.handle === b.dataset.contentSched);
+    if(idx < 0){ toast('That creator is no longer on the roster'); return; }
+    schedForm(idx);
+  }));
+}
+
+function contentForm(){
+  const list = S.kols || [];
+  if(!list.length){ toast('Add a creator to the roster first'); return; }
+  modal('Add content item', `
+    <div class="mf2">
+      <div class="mf"><label>Creator</label><select id="ctKol">
+        ${list.map(k => `<option value="${esc(k.handle)}">${esc(k.handle)} — ${esc((KOL_TYPES[k.type||'ugc']||{}).short||'')}</option>`).join('')}</select></div>
+      <div class="mf"><label>Type</label><select id="ctType">
+        ${CONTENT_TYPES.map(t => `<option>${esc(t)}</option>`).join('')}</select></div>
+    </div>
+    <div class="mf"><label>Draft link</label><input id="ctLink" placeholder="Drive, Dropbox, or platform-native draft link">
+      <p class="fh">No file upload here — paste a link to wherever the draft actually lives.</p></div>
+    <div class="mf"><label>Notes</label><textarea id="ctNotes" rows="2" placeholder="Revision feedback, what to check before approving"></textarea></div>`,
+    [['Cancel','x'],['Add','ok']], a => {
+      if(a !== 'ok') return true;
+      const kol = el('ctKol').value;
+      const link = el('ctLink').value.trim();
+      S.content = S.content || [];
+      S.content.push({
+        id:'C'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
+        kol, type: el('ctType').value, link,
+        notes: el('ctNotes').value.trim(),
+        status: link ? 'submitted' : 'draft',
+        at:new Date().toISOString(), updatedAt:new Date().toISOString()
+      });
+      save(); renderKolContentCuration();
+      toast('Content item added');
+      return true;
+    });
+}
+const addContentItemBtn = el('addContentItem');
+if(addContentItemBtn) addContentItemBtn.addEventListener('click', contentForm);
 
 /* ── creator brief — a real UGC script/edit-brief for a real roster
    creator, distinct from the Content module's synthetic-persona ad

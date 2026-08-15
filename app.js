@@ -43,6 +43,8 @@ function normalizeState(obj){
   s.proposals = s.proposals || [];
   s.bundleOverrides = s.bundleOverrides || {};
   s.schedule = s.schedule || [];
+  s.content  = s.content  || [];
+  s.contentTombstones = s.contentTombstones || [];
   s.sendLog  = s.sendLog  || [];
   s.eventStatus = s.eventStatus || {};
   s.expansion = s.expansion || {};
@@ -1382,18 +1384,25 @@ function renderSplitSuggestion(){
   const suggested = recommendSplit(i);
   const chK = Object.keys(CHAN_META);
   const changed = chK.some(k => Math.abs((suggested[k]||0) - (current[k]||0)) > 0.001);
+  const canEdit = isAdmin();
 
   box.innerHTML = `<div class="split-panel">
     <div class="tb-wrap"><table class="tb">
-      <thead><tr><th>Channel</th><th class="n">Current</th><th class="n">Suggested</th></tr></thead>
+      <thead><tr><th>Channel</th><th class="n">Current</th><th class="n">Suggested</th>${canEdit?'<th class="n">Custom %</th>':''}</tr></thead>
       <tbody>${chK.map(k => `<tr><td>${esc(CHAN_META[k].name)}</td>
         <td class="n">${Math.round((current[k]||0)*100)}%</td>
-        <td class="n">${changed ? `<b class="sug-up">${Math.round((suggested[k]||0)*100)}%</b>` : Math.round((suggested[k]||0)*100)+'%'}</td></tr>`).join('')}</tbody>
+        <td class="n">${changed ? `<b class="sug-up">${Math.round((suggested[k]||0)*100)}%</b>` : Math.round((suggested[k]||0)*100)+'%'}</td>
+        ${canEdit?`<td class="n"><input type="number" min="0" max="100" step="1" class="split-pct" data-chan="${k}" value="${Math.round((current[k]||0)*100)}"></td>`:''}</tr>`).join('')}</tbody>
     </table></div>
     <p class="split-note">${changed
       ? `Marketplace promo period active in ${esc(meta.k)} — shifted share from Google/Meta toward Shopee/TikTok.`
       : `No marketplace promo period tagged for ${esc(meta.k)} — suggestion matches the authored plan.`}</p>
-    ${isAdmin() ? `<button class="btn-line sm" id="applySplitBtn" ${changed?'':'disabled'}>Apply to this month</button>` : ''}
+    ${canEdit ? `<div class="split-edit-row">
+        <button class="btn-line sm" id="applySplitBtn" ${changed?'':'disabled'}>Apply suggested split</button>
+        <button class="btn-solid sm" id="saveCustomSplitBtn">Save custom split</button>
+        <span class="split-sum" id="splitSumNote"></span>
+      </div>`
+    : ''}
   </div>`;
 
   const applyBtn = el('applySplitBtn');
@@ -1402,6 +1411,33 @@ function renderSplitSuggestion(){
     S.splitOverrides[meta.k] = suggested;
     save(); renderAll();
     toast('Applied — ' + meta.k + ' now uses the suggested split');
+  });
+
+  const sumNote = el('splitSumNote');
+  const pctInputs = qsa('.split-pct', box);
+  const updateSum = () => {
+    if(!sumNote) return;
+    const total = pctInputs.reduce((a,inp) => a + (num(inp.value)||0), 0);
+    const off = Math.abs(total - 100) > 0.5;
+    sumNote.textContent = `Total ${total.toFixed(0)}%${off ? ' — must add up to 100% to save' : ''}`;
+    sumNote.classList.toggle('over', off);
+  };
+  pctInputs.forEach(inp => inp.addEventListener('input', updateSum));
+  updateSum();
+
+  const saveCustomBtn = el('saveCustomSplitBtn');
+  if(saveCustomBtn) saveCustomBtn.addEventListener('click', () => {
+    const total = pctInputs.reduce((a,inp) => a + (num(inp.value)||0), 0);
+    if(Math.abs(total - 100) > 0.5){
+      toast('Channel percentages must add up to 100% before saving');
+      return;
+    }
+    const custom = {};
+    pctInputs.forEach(inp => { custom[inp.dataset.chan] = (num(inp.value)||0) / 100; });
+    S.splitOverrides = S.splitOverrides || {};
+    S.splitOverrides[meta.k] = custom;
+    save(); renderAll();
+    toast('Custom split saved for ' + meta.k);
   });
 }
 

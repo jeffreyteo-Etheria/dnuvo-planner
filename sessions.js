@@ -193,8 +193,10 @@ function mergeRosterFrom(remoteCurrent){
   if(!remoteCurrent) return;
   const kolsMerge = mergeById(S.kols, remoteCurrent.kols, S.kolTombstones, remoteCurrent.kolTombstones);
   const schedMerge = mergeById(S.schedule, remoteCurrent.schedule, S.scheduleTombstones, remoteCurrent.scheduleTombstones);
+  const contentMerge = mergeById(S.content, remoteCurrent.content, S.contentTombstones, remoteCurrent.contentTombstones);
   S.kols = kolsMerge.list; S.kolTombstones = kolsMerge.tombstones;
   S.schedule = schedMerge.list; S.scheduleTombstones = schedMerge.tombstones;
+  S.content = contentMerge.list; S.contentTombstones = contentMerge.tombstones;
 }
 
 /* Adopting a pulled workspace normally means "replace S with remote" — fine
@@ -207,9 +209,11 @@ function applyRemoteMergedState(remoteCurrent){
   mergeRosterFrom(remoteCurrent);
   const mergedKols = S.kols, mergedKolTomb = S.kolTombstones;
   const mergedSched = S.schedule, mergedSchedTomb = S.scheduleTombstones;
+  const mergedContent = S.content, mergedContentTomb = S.contentTombstones;
   S = normalizeState(Object.assign({}, remoteCurrent));
   S.kols = mergedKols; S.kolTombstones = mergedKolTomb;
   S.schedule = mergedSched; S.scheduleTombstones = mergedSchedTomb;
+  S.content = mergedContent; S.contentTombstones = mergedContentTomb;
   return S;
 }
 

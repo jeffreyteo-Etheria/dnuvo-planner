@@ -1178,6 +1178,19 @@ const COMMISSION_OPTIONS = ['15%','20%','30%'];
    rule for every other field. */
 const AUDIENCE_MARKETS = ['SG','TH','MY','Other'];
 
+/* Content curation — the step between briefing a creator and putting them
+   on the schedule. Team can move a draft through review; only an admin
+   can make the actual approve/reject call, same "Administrator: Approvals"
+   split as everywhere else in this hub. */
+const CONTENT_TYPES = ['Video','Image','Carousel'];
+const CONTENT_STATUSES = [
+  { k:'draft',     name:'Draft' },
+  { k:'submitted', name:'Submitted' },
+  { k:'review',    name:'In review' },
+  { k:'approved',  name:'Approved' },
+  { k:'rejected',  name:'Rejected' }
+];
+
 /* Deliverable types per creator type */
 const DELIVERABLES = {
   ugc: ['Day 0 first impression','Day 14 check-in','Day 30 verdict','Store review','Photo set','Spark Ad rights'],
