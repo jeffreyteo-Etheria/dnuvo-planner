@@ -1928,9 +1928,9 @@ const kolTplBtn = el('kolTpl');
 if(kolTplBtn) kolTplBtn.addEventListener('click', () => {
   const rows = [
     ['type','handle','platform','name','tier','followers','audience','audienceMarket','contact','contactMethod','source','sourceAgency',
-     'creatorClass','recentBrandPosts','er','posts','rate','avgViews','avgGmv','gpm','retention','fee','commission','paymentTerms','proofLink','adCode','notes','stage'],
-    ['ugc','@creator_handle','TikTok','Creator Name','Nano','','','','','','','','Creator','','','','','','','','','','','','','','',''],
-    ['live','@live_handle','TikTok','Live Seller','Micro','','','','','','','','Creator','','','','','12000','6000','','6m 20s','200','','','','','','']
+     'introLink','productSeeded','creatorClass','recentBrandPosts','er','posts','rate','avgViews','avgGmv','gpm','retention','fee','commission','paymentTerms','proofLink','adCode','notes','stage','list'],
+    ['ugc','@creator_handle','TikTok','Creator Name','Nano','','','','','','','','','','Creator','','','','','','','','','','','','','','','','Campaign A list'],
+    ['live','@live_handle','TikTok','Live Seller','Micro','','','','','','','','','','Creator','','','','','12000','6000','','6m 20s','200','','','','','','','']
   ];
   if(typeof toCSV === 'function' && typeof dl === 'function'){
     dl('dnuvo-kol-import-template-' + stamp() + '.csv', toCSV(rows), 'text/csv;charset=utf-8');
@@ -2013,6 +2013,8 @@ if(kolImportBtn && kolImportFile){
           contact: x.contact || '',
           contactMethod: CONTACT_METHODS.includes((x.contactmethod||'').trim()) ? x.contactmethod.trim() : '',
           source: x.source || '', sourceAgency: x.sourceagency || '',
+          introLink: x.introlink || x.intro_link || x.mediakit || x.media_kit || '',
+          productSeeded: PRODUCT_SEEDED_OPTIONS.includes((x.productseeded||x.product_seeded||'').trim()) ? (x.productseeded||x.product_seeded).trim() : '',
           creatorClass: creatorClass === 'Artiste' ? 'Artiste' : 'Creator',
           recentBrandPosts: x.recentbrandposts || x.recent_brand_posts || x.brandposts60days || x.brand_posts_60_days || '',
           er: x.er || '', posts: x.posts || '', rate: x.rate || '',
@@ -2020,6 +2022,13 @@ if(kolImportBtn && kolImportFile){
           commission, paymentTerms: x.paymentterms || '', proofLink, adCode: x.adcode || '',
           notes: x.notes || '', stage, updatedAt: new Date().toISOString()
         };
+        // A "list" column groups imported rows into a custom KOL list on
+        // the way in — e.g. the source sheet's own tab/brand column —
+        // instead of having to re-select and save them by hand afterward.
+        // Semicolon-separated so one row can land in more than one list.
+        const listNames = String(x.list || x.lists || '').split(';').map(s => s.trim()).filter(Boolean);
+        const tagLists = kolId => { if(typeof addKolToListByName === 'function') listNames.forEach(n => addKolToListByName(n, kolId)); };
+
         if(existingIdx.has(key)){
           if(!updateMode){ skipped++; return; }
           const i = existingIdx.get(key);
@@ -2038,12 +2047,15 @@ if(kolImportBtn && kolImportFile){
           });
           merged.updatedAt = new Date().toISOString();
           S.kols[i] = merged;
+          tagLists(merged.id);
           updated++;
           return;
         }
         fields.stage = fields.stage || 'sourced';
-        S.kols.push(Object.assign({ id: 'K'+Date.now().toString(36)+Math.random().toString(36).slice(2,5), fit:{} }, fields));
+        const newId = 'K'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+        S.kols.push(Object.assign({ id: newId, fit:{} }, fields));
         existingIdx.set(key, S.kols.length - 1);
+        tagLists(newId);
         added++;
       });
         if(added || updated){
@@ -2057,6 +2069,107 @@ if(kolImportBtn && kolImportFile){
         toast(parts.join(', '));
       }
       else toast(skipped ? 'All ' + skipped + ' rows were duplicate, already in the roster, or had a follower-count handle' : 'No valid creator rows found');
+    };
+    r.readAsText(f);
+    e.target.value = '';
+  });
+}
+
+/* Bulk-import booked/delivered sessions straight into S.schedule — for
+   backfilling a livestream/UGC calendar (e.g. a Shopee streamer booking
+   sheet) without re-typing each row through the Schedule modal. A row
+   whose handle isn't already on the roster creates a minimal creator
+   record (stage 'scheduled') rather than being skipped, since a booking
+   sheet is often the first place a creator's name appears at all. Open
+   to team, not admin-only — same "anyone can add, only admin can delete"
+   split as everywhere else in KOL hub. */
+const schedTplBtn = el('schedTpl');
+if(schedTplBtn) schedTplBtn.addEventListener('click', () => {
+  const rows = [
+    ['handle','platform','type','deliverable','date','time','owner','note','gmv','fee','commission','proofLink','adCode','list'],
+    ['@creator_handle','Shopee Live','live','Live session','2026-07-08','20:00','','offer/voucher notes','','','25%','','','Campaign A list']
+  ];
+  if(typeof toCSV === 'function' && typeof dl === 'function'){
+    dl('dnuvo-schedule-import-template-' + stamp() + '.csv', toCSV(rows), 'text/csv;charset=utf-8');
+    toast('Schedule template downloaded');
+  }
+});
+
+const schedImportBtn = el('schedImport');
+const schedImportFile = el('schedImportFile');
+if(schedImportBtn && schedImportFile){
+  schedImportBtn.addEventListener('click', () => schedImportFile.click());
+  schedImportFile.addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    if(!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      if(typeof parseCsvObjects !== 'function'){ toast('CSV parser not available'); return; }
+      const rowsIn = parseCsvObjects(String(r.result || ''));
+      const hkey = h => String(h || '').trim().toLowerCase().replace(/^@+/, '');
+      const badHandle = h => /^[\d,.]+[kKmM]?$/.test(hkey(h));
+      const existingByHandle = new Map(S.kols.map((k,i) => [hkey(k.handle), i]));
+      const seenKey = new Set((S.schedule||[]).map(e => [hkey(e.kol), e.date, e.time, e.what].join('|')));
+      let added = 0, createdKols = 0, skipped = 0, badHandleRows = 0;
+
+      rowsIn.forEach(x => {
+        if(!x.handle) return;
+        const handle = x.handle.startsWith('@') ? x.handle : ('@' + x.handle);
+        if(badHandle(handle)){ badHandleRows++; skipped++; return; }
+        const hk = hkey(handle);
+        const type = (x.type === 'ugc' ? 'ugc' : 'live');
+        let kIdx = existingByHandle.get(hk);
+        if(kIdx == null){
+          const commission = COMMISSION_OPTIONS.includes((x.commission||'').trim()) ? x.commission.trim() : '';
+          S.kols.push({
+            id: 'K'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
+            type, handle, platform: x.platform || (type==='live' ? 'Shopee Live' : 'TikTok'),
+            name:'', tier:'', followers:'', audience:'', audienceMarket:'',
+            contact:'', contactMethod:'', source:'', sourceAgency:'', introLink:'', productSeeded:'',
+            creatorClass:'Creator', recentBrandPosts:'',
+            er:'', posts:'', rate:'', avgViews:'', avgGmv:'', gpm:'', retention:'',
+            fee:'', commission, paymentTerms:'', proofLink:'', adCode:'', notes:'',
+            stage:'scheduled', fit:{}, updatedAt:new Date().toISOString()
+          });
+          kIdx = S.kols.length - 1;
+          existingByHandle.set(hk, kIdx);
+          createdKols++;
+        }
+        const k = S.kols[kIdx];
+        if(typeof addKolToListByName === 'function'){
+          String(x.list || x.lists || '').split(';').map(s => s.trim()).filter(Boolean)
+            .forEach(n => addKolToListByName(n, k.id));
+        }
+        const what = x.deliverable || x.what || (DELIVERABLES[k.type||type] || ['Live session'])[0];
+        const date = x.date || '', time = x.time || '';
+        const dupKey = [hk, date, time, what].join('|');
+        if(seenKey.has(dupKey)){ skipped++; return; }
+        seenKey.add(dupKey);
+        S.schedule = S.schedule || [];
+        S.schedule.push({
+          id: 'E'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
+          kol: k.handle, type: k.type || type, what, date, time,
+          owner: x.owner || '', note: x.note || '',
+          proofLink: x.prooflink || '', adCode: x.adcode || '', gmv: x.gmv || '',
+          done:false, board:'planned',
+          feeAgreed: num(x.fee) || num(k.type==='live' ? k.fee : k.rate) || 0, paidStatus:'unpaid',
+          at:new Date().toISOString(), updatedAt:new Date().toISOString()
+        });
+        if(k.stage === 'approved') k.stage = 'scheduled';
+        added++;
+      });
+
+      if(added || createdKols){
+        save(); if(typeof renderKol === 'function') renderKol(); renderOverview();
+        const parts = [];
+        if(added) parts.push(added + ' schedule ' + (added===1?'entry':'entries') + ' added');
+        if(createdKols) parts.push(createdKols + ' creator' + (createdKols===1?'':'s') + ' added to the roster');
+        if(skipped) parts.push(skipped + ' skipped (duplicate or invalid handle)');
+        if(badHandleRows) parts.push(badHandleRows + ' rejected (handle looked like a follower count)');
+        toast(parts.join(', '));
+      } else {
+        toast(skipped ? 'All ' + skipped + ' rows were duplicate or invalid' : 'No valid rows found');
+      }
     };
     r.readAsText(f);
     e.target.value = '';

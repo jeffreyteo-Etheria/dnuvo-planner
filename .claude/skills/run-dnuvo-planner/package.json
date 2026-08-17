@@ -1,0 +1,9 @@
+{
+  "name": "run-dnuvo-planner-driver",
+  "private": true,
+  "description": "Playwright driver for the run-dnuvo-planner skill. Not part of the app itself.",
+  "type": "module",
+  "dependencies": {
+    "playwright": "^1.62.1"
+  }
+}

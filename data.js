@@ -1178,7 +1178,8 @@ const KOL_WARMTH = [
 ];
 
 const CONTACT_METHODS = ['DM','Email','Other'];
-const COMMISSION_OPTIONS = ['15%','20%','30%'];
+const COMMISSION_OPTIONS = ['15%','20%','25%','30%'];
+const PRODUCT_SEEDED_OPTIONS = ['Not sent','Sent','Received & confirmed'];
 
 /* Primary audience market — set only once a team member has actually
    checked platform-native audience insights and confirmed this market

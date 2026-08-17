@@ -57,6 +57,29 @@ function deleteKolList(listId){
   S.kolLists = (S.kolLists || []).filter(l => l.id !== listId);
   save();
 }
+/* Used by CSV import (a "list" column) to group rows into a named list
+   on the way in, matched case-insensitively so re-importing the same
+   sheet doesn't spawn "SK" and "sk" as two different lists. Does not
+   call save() itself — the importer that's mid-batch does one save()
+   at the end. */
+function findOrCreateKolListByName(name){
+  const n = String(name || '').trim();
+  if(!n) return null;
+  S.kolLists = S.kolLists || [];
+  let list = S.kolLists.find(l => l.name.toLowerCase() === n.toLowerCase());
+  if(!list){
+    list = { id:'L'+Date.now().toString(36)+Math.random().toString(36).slice(2,5), name:n, kolIds:[],
+      createdAt:new Date().toISOString(), updatedAt:new Date().toISOString() };
+    S.kolLists.push(list);
+  }
+  return list;
+}
+function addKolToListByName(name, kolId){
+  const list = findOrCreateKolListByName(name);
+  if(!list || !kolId) return;
+  if(!list.kolIds.includes(kolId)) list.kolIds.push(kolId);
+  list.updatedAt = new Date().toISOString();
+}
 
 const SCHED_BOARD_TONE = { planned:'p-n', confirmed:'p-v', live:'p-a', done:'p-g' };
 function schedBoardOf(e){ return e.board || (e.done ? 'done' : 'planned'); }
@@ -324,6 +347,30 @@ function payCell(e){
   const label = status === 'paid' ? 'Paid' : status === 'deposit' ? 'Deposit paid' : 'Unpaid';
   const tone = status === 'paid' ? 'p-g' : status === 'deposit' ? 'p-a' : 'p-n';
   return `<span class="pill ${tone}">${label}</span>`;
+}
+
+/* Commission-based spend for a schedule entry — for a Shopee/TikTok
+   livestream booked on a % commission (not a flat fee), the actual
+   dollar owed only exists once the session's real GMV is logged. Reads
+   the creator's own agreed commission (K OL record, not the schedule
+   entry) since that's where terms live; returns 0 rather than guessing
+   when either GMV or a commission rate isn't on file yet. */
+function commissionSpendFor(e){
+  const gmv = num(e.gmv);
+  if(!gmv) return 0;
+  const k = (S.kols||[]).find(x => x.handle === e.kol);
+  const pct = num((k && k.commission || '').replace('%',''));
+  return pct ? gmv * (pct/100) : 0;
+}
+/* Total dollars actually committed against a schedule entry — a flat
+   fee, a commission on logged GMV, or both if somehow both apply. */
+function spendFor(e){
+  return (e.feeAgreed||0) + commissionSpendFor(e);
+}
+/* Everything ever booked against this creator, across every schedule
+   entry regardless of status — the "total spend per KOL" figure. */
+function creatorSpendTotal(handle){
+  return (S.schedule||[]).filter(e => e.kol === handle).reduce((a,e) => a + spendFor(e), 0);
 }
 
 /* Pending pricing proposal flag — mirrors proposals.js's cell() styling,
@@ -858,7 +905,11 @@ function kolForm(idx, pre){
         <option value=""${!k.contactMethod?' selected':''}>Not set</option>
         ${CONTACT_METHODS.map(m=>`<option${k.contactMethod===m?' selected':''}>${m}</option>`).join('')}</select></div></div>
     ${f('kSource','Source URL',k.source,'where the figures were verified')}
-    ${f('kSourceAgency','Sourcing agency',k.sourceAgency,'blank if sourced directly, e.g. Atisfyre')}`;
+    ${f('kSourceAgency','Sourcing agency',k.sourceAgency,'blank if sourced directly, e.g. Atisfyre')}
+    <div class="mf2">${f('kIntroLink','Intro / media kit link',k.introLink,'portfolio, media kit, or intro deck')}
+      <div class="mf"><label>Product seeded (6-SKU set)</label><select id="kProductSeeded">
+        <option value=""${!k.productSeeded?' selected':''}>Not verified</option>
+        ${PRODUCT_SEEDED_OPTIONS.map(o=>`<option value="${o}"${k.productSeeded===o?' selected':''}>${o}</option>`).join('')}</select></div></div>`;
 
   const pricingHint = (field, plain) => {
     if(idx < 0 || !k.id) return '';
@@ -939,6 +990,7 @@ function kolForm(idx, pre){
       recentBrandPosts: el('kRecentBrandPosts').value.trim(),
       contactMethod: el('kContactMethod').value,
       source: el('kSource').value.trim(), sourceAgency: el('kSourceAgency').value.trim(),
+      introLink: el('kIntroLink').value.trim(), productSeeded: el('kProductSeeded').value,
       proofLink: el('kProofLink').value.trim(), adCode: el('kAdCode').value.trim(),
       notes: el('kNotes').value.trim(),
       stage: existing ? existing.stage : 'sourced',
@@ -1006,11 +1058,16 @@ function showCreatorCard(idx){
         <div><span>GPM</span><b>${g ? '$' + Math.round(g).toLocaleString() : 'not verified'}</b></div>
         <div><span>ROAS</span><b>${roas ? roas.toFixed(1) + '×' : 'not verified'}</b></div>
         <div><span>Recommended</span><b>${esc(sc.name)}</b></div>
+        <div><span>Product seeded</span><b>${esc(k.productSeeded || 'not verified')}</b></div>
+        <div><span>Total spend to date</span><b>${S.settings.cur}${Math.round(creatorSpendTotal(k.handle)).toLocaleString()}</b></div>
       </div>
       <div class="cc-note"><b>How this is derived</b><p>${esc(metricHelp(k))}</p></div>
       <div class="cc-note"><b>60-day brand posts</b><p>${esc(k.recentBrandPosts || 'Not verified yet. Add brand/date/link evidence from TikTok, Instagram, affiliate storefront, or agency sheet.')}</p></div>
       <div class="cc-note"><b>Notes</b><p>${esc(k.notes || 'No notes recorded.')}</p></div>
-      ${k.source?`<a class="src-ln" href="${esc(k.source)}" target="_blank" rel="noopener">Open source</a>`:''}
+      <div class="cc-links">
+        ${k.source?`<a class="src-ln" href="${esc(k.source)}" target="_blank" rel="noopener">Open source</a>`:''}
+        ${k.introLink?`<a class="src-ln" href="${esc(k.introLink)}" target="_blank" rel="noopener">Open intro / media kit</a>`:''}
+      </div>
     </div>`, [['Close','x'],['Edit','edit']], a => {
       if(a === 'edit'){ kolForm(idx); return true; }
       return true;
@@ -1391,7 +1448,9 @@ function schedForm(idx){
       <div class="mf"><label>Proof of delivery link</label><input id="scProof" placeholder="fill in once posted/streamed">
         <p class="fh">Required before this entry can be marked done — can be left blank now and added later.</p></div>
       <div class="mf"><label>Ad code</label><input id="scAdCode" placeholder="if issued"></div>
-    </div>`,
+    </div>
+    <div class="mf"><label>Actual GMV</label><input id="scGmv" placeholder="fill in once the session/post has real numbers, blank until verified">
+      <p class="fh">Drives commission spend (this creator's agreed commission % × GMV) in the payments/budget panels — leave blank until you have a real figure.</p></div>`,
     [['Cancel','x'],['Add to schedule','ok']], a => {
       if(a !== 'ok') return true;
       S.schedule = S.schedule || [];
@@ -1400,6 +1459,7 @@ function schedForm(idx){
         what: el('scType').value, date: el('scDate').value, time: el('scTime').value,
         owner: el('scOwner').value.trim(), note: el('scNote').value.trim(),
         proofLink: el('scProof').value.trim(), adCode: el('scAdCode').value.trim(),
+        gmv: el('scGmv').value.trim(),
         done:false, board:'planned',
         feeAgreed: num(type === 'live' ? k.fee : k.rate) || 0, paidStatus:'unpaid',
         at:new Date().toISOString(), updatedAt:new Date().toISOString()
@@ -1454,7 +1514,7 @@ function renderKolSchedule(){
   }
   box.innerHTML = filterBar + `<div class="tb-wrap"><table class="tb" id="schedTable">
     <thead><tr><th>Date</th><th>Time</th><th>Creator</th><th>Type</th><th>Deliverable</th>
-      <th>Owner</th><th>Notes</th><th>Proof</th><th>Status</th><th class="n">Fee</th><th>Payment</th><th></th></tr></thead><tbody>` +
+      <th>Owner</th><th>Notes</th><th>Proof</th><th>Status</th><th class="n">Fee</th><th class="n">GMV</th><th class="n">Total spend</th><th>Payment</th><th></th></tr></thead><tbody>` +
     list.map(e => {
       const past = e.date < today;
       const kol = S.kols.find(x => x.handle === e.kol);
@@ -1473,6 +1533,8 @@ function renderKolSchedule(){
               :past?`<span class="pill p-r">Overdue</span>`
               :`<span class="pill p-a">Booked</span>`}</td>
         <td class="n">${e.feeAgreed?esc(S.settings.cur+e.feeAgreed):'—'}</td>
+        <td class="n"><span class="ed" contenteditable="true" data-scgmv="${e.id}">${esc(e.gmv||'')}</span></td>
+        <td class="n">${esc(S.settings.cur)}${Math.round(spendFor(e)).toLocaleString()}</td>
         <td>${payCell(e)}</td>
         <td><div class="k-acts">
           <button class="btn-line sm" data-scdone="${e.id}">${e.done?'Reopen':'Mark done'}</button>
@@ -1507,6 +1569,18 @@ function renderKolSchedule(){
     const e = S.schedule.find(x=>x.id===s.dataset.pay);
     if(e){ e.paidStatus = s.value; e.updatedAt = new Date().toISOString(); save(); renderKolPayments(); }
   }));
+  qsa('[data-scgmv]').forEach(c => c.addEventListener('blur', () => {
+    const e = S.schedule.find(x=>x.id===c.dataset.scgmv);
+    if(!e) return;
+    const raw = c.textContent.trim();
+    if(raw && num(raw) === 0 && raw !== '0'){
+      toast(`"${raw}" doesn't look like a number — GMV was not saved`);
+      c.textContent = e.gmv || '';
+      return;
+    }
+    e.gmv = raw; e.updatedAt = new Date().toISOString();
+    save(); renderKol();
+  }));
 
   const dl = el('schedAllIcs');
   if(dl) dl.onclick = () => downloadIcs(null);
@@ -1538,8 +1612,9 @@ function renderKolScheduleBoard(){
           <div class="sc-top"><b>${esc(e.kol)}</b><span class="pill ${KOL_TYPES[e.type]?KOL_TYPES[e.type].pill:'p-n'}">${KOL_TYPES[e.type]?KOL_TYPES[e.type].short:'—'}</span></div>
           <span class="sub">${esc(e.what)}</span>
           <span class="sc-date">${esc(e.date)}${e.time?' · '+esc(e.time):''}</span>
-          ${e.feeAgreed ? `<span class="sc-fee">${esc(S.settings.cur+e.feeAgreed)} · ${
+          ${spendFor(e) ? `<span class="sc-fee">${esc(S.settings.cur)}${Math.round(spendFor(e)).toLocaleString()} · ${
             (e.paidStatus||'unpaid')==='paid'?'Paid':(e.paidStatus||'unpaid')==='deposit'?'Deposit paid':'Unpaid'}</span>` : ''}
+          ${e.gmv ? `<span class="sc-fee">GMV ${esc(S.settings.cur)}${Number(e.gmv).toLocaleString()}</span>` : ''}
           <span class="sc-proof ${e.proofLink?'has':''}">${e.proofLink?'Proof on file':'No proof yet'}</span>
         </div>`).join('') || '<p class="sched-empty">Nothing here</p>'}
       </div>
@@ -1712,6 +1787,11 @@ function showScheduleEntry(id){
       <div class="mf"><label>Payment</label>${payCell(e)}</div>
     </div>
     <div class="mf2">
+      <div class="mf"><label>Actual GMV</label><input id="seGmv" value="${esc(e.gmv||'')}" placeholder="blank until verified">
+        <p class="fh">Commission owed: ${commissionSpendFor(e)?esc(S.settings.cur)+Math.round(commissionSpendFor(e)).toLocaleString():'needs GMV and an agreed commission %'}</p></div>
+      <div class="mf"><label>Total spend</label><p><b>${esc(S.settings.cur)}${Math.round(spendFor(e)).toLocaleString()}</b></p></div>
+    </div>
+    <div class="mf2">
       <div class="mf"><label>Proof of delivery link</label>
         <input id="seProof" value="${esc(e.proofLink||'')}" placeholder="posted content or stream link">
         <p class="fh">Required before this can be marked done.</p></div>
@@ -1739,6 +1819,11 @@ function showScheduleEntry(id){
     });
   el('seProof').addEventListener('change', ev => { e.proofLink = ev.target.value.trim(); e.updatedAt = new Date().toISOString(); save(); });
   el('seAdCode').addEventListener('change', ev => { e.adCode = ev.target.value.trim(); e.updatedAt = new Date().toISOString(); save(); });
+  el('seGmv').addEventListener('change', ev => {
+    const raw = ev.target.value.trim();
+    if(raw && num(raw) === 0 && raw !== '0'){ toast(`"${raw}" doesn't look like a number — GMV was not saved`); ev.target.value = e.gmv||''; return; }
+    e.gmv = raw; e.updatedAt = new Date().toISOString(); save(); renderKol();
+  });
   qsa('[data-pay]').forEach(s => s.addEventListener('change', () => {
     const ent = S.schedule.find(x=>x.id===s.dataset.pay);
     if(ent){ ent.paidStatus = s.value; ent.updatedAt = new Date().toISOString(); save(); renderKol(); }
@@ -1906,7 +1991,7 @@ function renderKolPayments(){
   const box = el('kolPayments'); if(!box) return;
   const all = S.schedule || [];
   const totals = { unpaid:0, deposit:0, paid:0 };
-  all.forEach(e => { totals[e.paidStatus||'unpaid'] += (e.feeAgreed||0); });
+  all.forEach(e => { totals[e.paidStatus||'unpaid'] += spendFor(e); });
   const grand = totals.unpaid + totals.deposit + totals.paid;
   const c = S.settings.cur;
   box.innerHTML = `<div class="pay-summary">
@@ -1914,7 +1999,8 @@ function renderKolPayments(){
     <div class="pay-tile"><span>Deposits paid</span><b>${esc(c)}${totals.deposit.toLocaleString()}</b></div>
     <div class="pay-tile"><span>Paid in full</span><b>${esc(c)}${totals.paid.toLocaleString()}</b></div>
     <div class="pay-tile tot"><span>Total committed</span><b>${esc(c)}${grand.toLocaleString()}</b></div>
-  </div>`;
+  </div>
+  <p class="fh">Includes both flat fees and commission owed on logged GMV (creator's agreed commission % × each entry's Actual GMV).</p>`;
 }
 
 /* Real calendar dates for M1-M6, derived from S.settings.startMonth
@@ -1939,7 +2025,7 @@ function kolBudgetDrilldown(monthIndex){
   const pool = (b && b.ch.kol) || 0;
   const range = monthDateRange(monthIndex);
   const entries = (S.schedule || []).filter(e => e.date >= range.start && e.date < range.end);
-  const committed = entries.reduce((a,e) => a + (e.feeAgreed||0), 0);
+  const committed = entries.reduce((a,e) => a + spendFor(e), 0);
   return { month: b ? b.label : '—', pool, committed, diff: pool - committed, entries };
 }
 
@@ -1956,8 +2042,11 @@ function renderKolBudgetDrilldown(){
     </div>
     ${d.entries.length
       ? `<div class="tb-wrap"><table class="tb">
-          <thead><tr><th>Creator</th><th>Deliverable</th><th class="n">Fee</th></tr></thead>
-          <tbody>${d.entries.map(e => `<tr><td>${esc(e.kol)}</td><td>${esc(e.what)}</td><td class="n">${esc(c)}${(e.feeAgreed||0).toLocaleString()}</td></tr>`).join('')}</tbody>
+          <thead><tr><th>Creator</th><th>Deliverable</th><th class="n">Fee</th><th class="n">Commission (GMV)</th><th class="n">Total spend</th></tr></thead>
+          <tbody>${d.entries.map(e => `<tr><td>${esc(e.kol)}</td><td>${esc(e.what)}</td>
+            <td class="n">${esc(c)}${(e.feeAgreed||0).toLocaleString()}</td>
+            <td class="n">${e.gmv?esc(c)+Math.round(commissionSpendFor(e)).toLocaleString():'<span class="nv">—</span>'}</td>
+            <td class="n"><b>${esc(c)}${Math.round(spendFor(e)).toLocaleString()}</b></td></tr>`).join('')}</tbody>
         </table></div>`
       : `<p class="empty">No deliverables scheduled in ${esc(d.month)} yet.</p>`}`;
 }

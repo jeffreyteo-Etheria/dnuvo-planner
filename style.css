@@ -1091,6 +1091,7 @@ tr.sc-late td{background:rgba(168,50,60,.04)}
 .intel-head #impCompCsv,.intel-head #pasteCompCsv{margin-left:0}
 .src-ln{font-family:var(--m);font-size:11px;color:var(--violet);text-decoration:none}
 .src-ln:hover{text-decoration:underline}
+.cc-links{display:flex;gap:14px;margin-top:4px}
 .msg-stack{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px}
 .ms-card{border:1px solid var(--line);border-radius:7px;padding:10px 11px;background:#FAFAF9}
 .ms-card span{display:block;font-family:var(--m);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin-bottom:4px}
