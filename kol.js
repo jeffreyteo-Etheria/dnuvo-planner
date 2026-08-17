@@ -11,12 +11,53 @@
 let kolTab = 'ugc';
 let kolStage = 'creators';
 let kolViewFilter = 'default'; // 'default' | 'all' | a KOL_PIPE stage key
-let kolFilters = { q:'', platform:'', tier:'', creatorClass:'', market:'', dupes:'all' };
+let kolFilters = { q:'', platform:'', tier:'', creatorClass:'', market:'', list:'', dupes:'all' };
+let kolSelected = new Set(); // KOL record ids the user has checked, for building a custom list
 let schedView = 'table';
 let schedStatusFilter = 'all';
 let schedCalMonth = null;
-let schedCalFilters = { kol:'', type:'', status:'' };
-let schedBoardFilters = { type:'' };
+let schedCalFilters = { kol:'', type:'', status:'', list:'' };
+let schedBoardFilters = { type:'', list:'' };
+/* ── custom KOL lists — a named subset of the roster (e.g. "Campaign A
+   list") a user builds by checking creators in the table. A list is just
+   a set of record ids layered over the same roster — it doesn't fork or
+   copy a creator's data, so the same person can sit in several lists and
+   still has exactly one record moving through Source → Contact → Content
+   → Schedule. UGC and Livestream stay independent the same way they
+   already do everywhere else (kolTab); a list can hold either or both. ── */
+function kolListName(id){ return (S.kolLists.find(l => l.id === id) || {}).name || ''; }
+function kolListsFor(kolId){ return (S.kolLists || []).filter(l => (l.kolIds||[]).includes(kolId)); }
+function handlesInList(listId){
+  const list = (S.kolLists || []).find(l => l.id === listId);
+  if(!list) return [];
+  return (list.kolIds || []).map(id => (S.kols.find(k => k.id === id) || {}).handle).filter(Boolean);
+}
+function createKolList(name, kolIds){
+  const list = {
+    id: 'L'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
+    name: name.trim(), kolIds: [...new Set(kolIds)],
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+  };
+  S.kolLists = S.kolLists || [];
+  S.kolLists.push(list);
+  save();
+  return list;
+}
+function addToKolList(listId, kolIds){
+  const list = (S.kolLists || []).find(l => l.id === listId);
+  if(!list) return;
+  list.kolIds = [...new Set([...(list.kolIds||[]), ...kolIds])];
+  list.updatedAt = new Date().toISOString();
+  save();
+}
+function deleteKolList(listId){
+  const now = new Date().toISOString();
+  S.kolListTombstones = S.kolListTombstones || [];
+  S.kolListTombstones.push({ id:listId, at:now });
+  S.kolLists = (S.kolLists || []).filter(l => l.id !== listId);
+  save();
+}
+
 const SCHED_BOARD_TONE = { planned:'p-n', confirmed:'p-v', live:'p-a', done:'p-g' };
 function schedBoardOf(e){ return e.board || (e.done ? 'done' : 'planned'); }
 /* Cold = never contacted. Warm = in conversation. Confirmed = terms locked
@@ -81,6 +122,37 @@ function numericHandleMergeCandidates(){
       const nameHandle = normHandle(x.k.name);
       const matchIdx = nameHandle ? byHandle.get(nameHandle) : undefined;
       return { bad:x.k, badIdx:x.i, match: (matchIdx!=null && matchIdx!==x.i) ? list[matchIdx] : null };
+    });
+}
+/* How much real work is actually recorded against this creator — used to
+   decide which copy of a same-handle UGC/Livestream duplicate is the one
+   worth keeping. Follower count and niche tags don't count as "activity"
+   since those get copied onto every duplicate by the same import; only
+   things that reflect a real interaction do. */
+function activitySignal(k){
+  let n = 0;
+  if(k.stage && k.stage !== 'sourced') n++;
+  if(k.contact) n++;
+  if(k.notes) n++;
+  if(k.proofLink) n++;
+  if(k.recentBrandPosts) n++;
+  if(scheduleStatusFor(k.handle)) n++;
+  return n;
+}
+/* Same handle logged as both a UGC and a Livestream record — legitimate
+   when someone genuinely does both, but far more often just the same
+   person added twice from two different source sheets. Only auto-suggests
+   a resolution when exactly one side has strictly more recorded activity
+   than the other; a tie (including "neither has any") is left for the
+   plain Duplicate Watch list below instead of guessing. */
+function crossTypeDuplicateResolutions(){
+  return duplicateHandleGroups()
+    .filter(([h, items]) => new Set(items.map(x => x.k.type||'ugc')).size > 1)
+    .map(([h, items]) => {
+      const scored = items.map(x => Object.assign({}, x, { score: activitySignal(x.k) }));
+      const max = Math.max(...scored.map(x => x.score));
+      const winners = scored.filter(x => x.score === max);
+      return { h, keep: winners.length === 1 ? winners[0] : null, drop: winners.length === 1 ? scored.filter(x => x !== winners[0]) : [] };
     });
 }
 function followerTier(k){
@@ -275,6 +347,7 @@ function renderKol(){
   renderKolFilters();
   renderDuplicateWatch();
   renderKolTable();
+  renderKolSelectionBar();
   renderKolContentAngles();
   renderKolContentCuration();
   renderKolActivation();
@@ -393,6 +466,10 @@ function renderKolFilters(){
         ${AUDIENCE_MARKETS.map(m => `<option value="${m}"${kolFilters.market===m?' selected':''}>${m}</option>`).join('')}
         <option value="_unset"${kolFilters.market==='_unset'?' selected':''}>Not verified</option></select>
     </label>
+    <label>List
+      <select id="kolListFilter"><option value="">All</option>
+        ${(S.kolLists||[]).map(l => `<option value="${l.id}"${kolFilters.list===l.id?' selected':''}>${esc(l.name)}</option>`).join('')}</select>
+    </label>
     <label>Duplicates
       <select id="kolDupFilter">
         <option value="all"${kolFilters.dupes==='all'?' selected':''}>Show all</option>
@@ -406,31 +483,165 @@ function renderKolFilters(){
     kolFilters.tier = el('kolTierFilter').value;
     kolFilters.creatorClass = el('kolClassFilter').value;
     kolFilters.market = el('kolMarketFilter').value;
+    kolFilters.list = el('kolListFilter').value;
     kolFilters.dupes = el('kolDupFilter').value;
     renderKolTable();
   };
-  ['kolSearch','kolPlatformFilter','kolTierFilter','kolClassFilter','kolMarketFilter','kolDupFilter'].forEach(id => {
+  ['kolSearch','kolPlatformFilter','kolTierFilter','kolClassFilter','kolMarketFilter','kolListFilter','kolDupFilter'].forEach(id => {
     const node = el(id);
     node.addEventListener(id === 'kolSearch' ? 'input' : 'change', apply);
   });
   el('kolFilterClear').addEventListener('click', () => {
-    kolFilters = { q:'', platform:'', tier:'', creatorClass:'', market:'', dupes:'all' };
+    kolFilters = { q:'', platform:'', tier:'', creatorClass:'', market:'', list:'', dupes:'all' };
     renderKolFilters(); renderKolTable();
   });
+}
+
+/* Appears the moment any row is checked — this IS the "do you want to
+   save this as a custom list?" ask, as a standing offer rather than a
+   modal that would interrupt someone still mid-selection. Anyone can
+   create/add-to a list (it's just an organizational label over existing
+   records, not a data change), so this isn't admin-gated like deletion. */
+function renderKolSelectionBar(){
+  const box = el('kolSelectionBar'); if(!box) return;
+  const n = kolSelected.size;
+  const lists = S.kolLists || [];
+  if(!n){
+    box.innerHTML = lists.length ? `<div class="ksel-bar ksel-idle">
+      <span class="fh">Check creators in the table below to build a custom list (e.g. "Campaign A list").</span>
+      <label>Manage <select id="kselManage"><option value="">${lists.length} list${lists.length===1?'':'s'} saved…</option>
+        ${lists.map(l => `<option value="${l.id}">${esc(l.name)} (${(l.kolIds||[]).length})</option>`).join('')}</select></label>
+    </div>` : '';
+    const manageSel = el('kselManage');
+    if(manageSel) manageSel.addEventListener('change', () => {
+      if(manageSel.value) showKolListDetail(manageSel.value);
+      manageSel.value = '';
+    });
+    return;
+  }
+  box.innerHTML = `<div class="ksel-bar">
+    <b>${n} creator${n===1?'':'s'} selected</b>
+    <button class="btn-solid sm" id="kselCreateList">Save as custom list</button>
+    ${lists.length ? `<label class="ksel-add">Add to existing
+      <select id="kselAddList"><option value="">Choose a list…</option>
+        ${lists.map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select></label>` : ''}
+    <button class="btn-line sm" id="kselClear">Clear selection</button>
+  </div>`;
+
+  el('kselCreateList').addEventListener('click', () => {
+    modal('Save as a custom list', `
+      <div class="mf"><label>List name</label><input id="newListName" placeholder="e.g. Campaign A list"></div>
+      <p class="fh">${n} selected creator${n===1?'':'s'} will be added to this list. The same creator can belong to more than one list, and stays on the normal roster either way — a list is just a saved filter, not a copy.</p>`,
+      [['Cancel','x'],['Create list','ok']], a => {
+        if(a !== 'ok') return true;
+        const name = el('newListName').value.trim();
+        if(!name){ toast('Give the list a name'); return false; }
+        createKolList(name, [...kolSelected]);
+        kolSelected.clear();
+        renderKol();
+        toast('List created');
+        return true;
+      });
+  });
+  const addSel = el('kselAddList');
+  if(addSel) addSel.addEventListener('change', () => {
+    if(!addSel.value) return;
+    addToKolList(addSel.value, [...kolSelected]);
+    const name = kolListName(addSel.value);
+    kolSelected.clear();
+    renderKol();
+    toast('Added to ' + name);
+  });
+  el('kselClear').addEventListener('click', () => {
+    kolSelected.clear();
+    renderKolSelectionBar();
+    renderKolTable();
+  });
+}
+
+/* Simple detail/manage view for one list — remove a member, rename, or
+   delete the list outright (never deletes the underlying creator records). */
+function showKolListDetail(listId){
+  const list = (S.kolLists||[]).find(l => l.id === listId);
+  if(!list) return;
+  const members = (list.kolIds||[]).map(id => S.kols.find(k => k.id === id)).filter(Boolean);
+  modal(`List — ${list.name}`, `
+    <div class="mf"><label>Name</label><input id="editListName" value="${esc(list.name)}"></div>
+    <div class="tb-wrap"><table class="tb">
+      <thead><tr><th>Creator</th><th>Type</th><th></th></tr></thead><tbody>
+      ${members.length ? members.map(k => `<tr><td><b>${esc(k.handle)}</b></td><td>${esc((KOL_TYPES[k.type||'ugc']||{}).short||'')}</td>
+        <td><button class="btn-line sm" data-listremove="${esc(k.id)}">Remove</button></td></tr>`).join('')
+        : `<tr><td colspan="3" class="empty">No creators in this list — select some in the table and add them here.</td></tr>`}
+      </tbody></table></div>`,
+    [['Delete list','del'],['Close','x'],['Save name','ok']], a => {
+      if(a === 'del'){ deleteKolList(listId); renderKol(); toast('List deleted — the creators themselves are untouched'); return true; }
+      if(a === 'ok'){
+        const name = el('editListName').value.trim();
+        if(!name){ toast('Give the list a name'); return false; }
+        list.name = name; list.updatedAt = new Date().toISOString(); save(); renderKol();
+        return true;
+      }
+      return true;
+    });
+  qsa('[data-listremove]').forEach(b => b.addEventListener('click', () => {
+    list.kolIds = (list.kolIds||[]).filter(id => id !== b.dataset.listremove);
+    list.updatedAt = new Date().toISOString();
+    save();
+    closeModal();
+    renderKol();
+    showKolListDetail(listId);
+  }));
+}
+
+/* Shared by both merge tools below — same tombstone-then-splice sequence
+   delKol() uses, so a removal here is indistinguishable from one done
+   through the normal Delete button (Live sync merge, schedule cleanup,
+   admin gate all match). */
+function removeKolAt(idx, why){
+  const k = S.kols[idx];
+  if(!k || !canDelete(k)) return;
+  const now = new Date().toISOString();
+  S.scheduleTombstones = S.scheduleTombstones || [];
+  (S.schedule||[]).filter(e => e.kol === k.handle).forEach(e => S.scheduleTombstones.push({ id:e.id, at:now }));
+  S.schedule = (S.schedule||[]).filter(e => e.kol !== k.handle);
+  S.kolTombstones = S.kolTombstones || [];
+  S.kolTombstones.push({ id:k.id, at:now });
+  S.kols.splice(idx,1);
+  save(); renderKol(); renderOverview();
+  toast((why||'Removed') + ' ' + k.handle);
 }
 
 function renderDuplicateWatch(){
   const box = el('kolDuplicateBox'); if(!box) return;
   const groups = duplicateHandleGroups();
   const numeric = numericHandleMergeCandidates();
-  box.hidden = !groups.length && !numeric.length;
-  if(!groups.length && !numeric.length){ box.innerHTML = ''; return; }
+  const crossType = crossTypeDuplicateResolutions();
+  box.hidden = !groups.length && !numeric.length && !crossType.length;
+  if(!groups.length && !numeric.length && !crossType.length){ box.innerHTML = ''; return; }
 
   const admin = isAdmin();
   const matched = numeric.filter(x => x.match);
   const unmatched = numeric.filter(x => !x.match);
+  const resolvable = crossType.filter(x => x.keep);
+  const unresolvable = crossType.filter(x => !x.keep);
 
   box.innerHTML = `
+    ${resolvable.length ? `<div class="dup-section">
+      <b>${resolvable.length} same-handle UGC/Livestream duplicate${resolvable.length===1?'':'s'} — one side has real activity, the other doesn't.</b>
+      <span class="fh">Stage progress, contact, notes, proof or a schedule entry count as activity; follower count and niche tags don't, since an import copies those onto both sides equally.</span>
+      ${resolvable.map(x => `<div class="dup-merge-row">
+        <span class="dup-chip">@${esc(x.h)} (${esc(((KOL_TYPES[x.keep.k.type||'ugc']||{}).short)||'')}) — keeping</span>
+        ${x.drop.map(d => `<span class="dup-arrow">→ drop</span><span class="dup-chip bad">${esc(((KOL_TYPES[d.k.type||'ugc']||{}).short)||'')}</span>`).join('')}
+        ${admin
+          ? x.drop.map(d => `<button class="btn-line sm danger" data-crosstype-del="${d.i}">Remove the ${esc(((KOL_TYPES[d.k.type||'ugc']||{}).short)||'')} copy</button>`).join('')
+          : `<span class="lock-t" title="Only an administrator can remove a roster record">🔒</span>`}
+      </div>`).join('')}
+    </div>` : ''}
+    ${unresolvable.length ? `<div class="dup-section">
+      <b>${unresolvable.length} same-handle UGC/Livestream duplicate${unresolvable.length===1?'':'s'} with no clear winner.</b>
+      ${unresolvable.map(x => `<span class="dup-chip">@${esc(x.h)}</span>`).join('')}
+      <span class="fh">Both sides show the same amount of activity (including none) — review by hand rather than guess which to keep.</span>
+    </div>` : ''}
     ${groups.length ? `<div class="dup-section">
       <b>${groups.length} duplicate handle${groups.length===1?'':'s'} found.</b>
       ${groups.map(([h, items]) => `<span class="dup-chip">@${esc(h)} · ${items.map(x => esc((x.k.type||'ugc').toUpperCase())).join(' / ')}</span>`).join('')}
@@ -452,20 +663,8 @@ function renderDuplicateWatch(){
       <span class="fh">No other record's handle matches this one's Display name — open Edit to check it by hand rather than assume.</span>
     </div>` : ''}`;
 
-  qsa('[data-merge-del]', box).forEach(b => b.addEventListener('click', () => {
-    const idx = +b.dataset.mergeDel;
-    const k = S.kols[idx];
-    if(!k || !canDelete(k)) return;
-    const now = new Date().toISOString();
-    S.scheduleTombstones = S.scheduleTombstones || [];
-    (S.schedule||[]).filter(e => e.kol === k.handle).forEach(e => S.scheduleTombstones.push({ id:e.id, at:now }));
-    S.schedule = (S.schedule||[]).filter(e => e.kol !== k.handle);
-    S.kolTombstones = S.kolTombstones || [];
-    S.kolTombstones.push({ id:k.id, at:now });
-    S.kols.splice(idx,1);
-    save(); renderKol(); renderOverview();
-    toast('Removed ' + k.handle);
-  }));
+  qsa('[data-merge-del]', box).forEach(b => b.addEventListener('click', () => removeKolAt(+b.dataset.mergeDel, 'Removed')));
+  qsa('[data-crosstype-del]', box).forEach(b => b.addEventListener('click', () => removeKolAt(+b.dataset.crosstypeDel, 'Removed the inactive copy of')));
 }
 
 function renderKolTable(){
@@ -484,6 +683,7 @@ function renderKolTable(){
     if(kolFilters.creatorClass && inferredCreatorClass(k) !== kolFilters.creatorClass) return false;
     if(kolFilters.market === '_unset' && k.audienceMarket) return false;
     if(kolFilters.market && kolFilters.market !== '_unset' && k.audienceMarket !== kolFilters.market) return false;
+    if(kolFilters.list && !kolListsFor(k.id).some(l => l.id === kolFilters.list)) return false;
     if(kolFilters.dupes === 'only' && !duplicateInfoFor(k)) return false;
     if(q){
       const hay = [k.handle, k.name, k.platform, k.tier, k.followers, k.audience, k.sourceAgency,
@@ -506,11 +706,13 @@ function renderKolTable(){
   const handleCell = k => {
     const url = profileUrl(k);
     const dup = duplicateInfoFor(k);
+    const lists = kolListsFor(k.id);
     const b = url
       ? `<a href="${esc(url)}" target="_blank" rel="noopener" class="k-handle-link">${esc(k.handle)}</a>`
       : esc(k.handle);
     return `<b>${b}</b>${dup?` <span class="dup-badge" title="Same handle appears ${dup.length} times in the roster">duplicate</span>`:''}
       <span class="sub">${esc(k.platform||'')}${k.name?' · '+esc(k.name):''}</span>
+      ${lists.length?`<span class="sub">${lists.map(l => `<span class="pill p-v" style="margin-right:4px">${esc(l.name)}</span>`).join('')}</span>`:''}
       ${k.recentBrandPosts?`<span class="sub">60-day brands: ${esc(k.recentBrandPosts).slice(0,120)}${String(k.recentBrandPosts).length>120?'...':''}</span>`:''}`;
   };
   const contactCell = k => k.contact
@@ -525,12 +727,13 @@ function renderKolTable(){
   };
 
   const head = kolTab === 'ugc'
-    ? `<th>Creator</th><th>Remark</th><th>Tier</th><th class="n">Followers</th><th class="n">Score</th><th>Rating</th>
+    ? `<th></th><th>Creator</th><th>Remark</th><th>Tier</th><th class="n">Followers</th><th class="n">Score</th><th>Rating</th>
        <th class="n">Engagement</th><th class="n">Posts</th><th>Contact</th><th class="n">Rate</th><th>Schedule</th><th>Stage</th><th></th>`
-    : `<th>Creator</th><th>Remark</th><th class="n">Followers</th><th class="n">Avg views</th><th class="n">GPM</th>
+    : `<th></th><th>Creator</th><th>Remark</th><th class="n">Followers</th><th class="n">Avg views</th><th class="n">GPM</th>
        <th class="n">ROAS</th><th class="n">Score</th><th>Rating</th><th class="n">Fit</th><th>Recommended terms</th><th>Contact</th><th>Stage</th><th></th>`;
 
   el('kolTable').innerHTML = `<thead><tr>${head}</tr></thead><tbody>` + list.map(k => {
+    const selCell = `<td><input type="checkbox" class="k-select" data-ksel="${esc(k.id)}"${kolSelected.has(k.id)?' checked':''}></td>`;
     const i = S.kols.indexOf(k);
     const del = canDelete(k);
     const stageSel = `<select class="k-stage" data-i="${i}">${KOL_PIPE.map(s =>
@@ -550,7 +753,7 @@ function renderKolTable(){
     </div>`;
 
     if(kolTab === 'ugc'){
-      return `<tr class="${duplicateInfoFor(k)?'dup-row':''}"><td>${handleCell(k)}</td>
+      return `<tr class="${duplicateInfoFor(k)?'dup-row':''}">${selCell}<td>${handleCell(k)}</td>
         <td>${clsSel}</td>
         <td><span class="pill p-n">${esc(followerTier(k)||k.tier||'—')}</span></td>
         <td class="n">${v(k.followers)}</td>
@@ -575,7 +778,7 @@ function renderKolTable(){
          <span class="sub">${k.fee?esc(S.settings.cur+k.fee):'no fixed fee'}${k.commission?' + '+esc(k.commission):''}</span>`
       : `<span class="pill ${sc.tone}">${sc.name}</span>
          <span class="sub">${sc.fee?S.settings.cur+sc.fee.toLocaleString()+' + '+sc.comm+'%':'commission only'}${sc.capped?' · capped':''}</span>`;
-    return `<tr class="${duplicateInfoFor(k)?'dup-row':''}"><td>${handleCell(k)}</td>
+    return `<tr class="${duplicateInfoFor(k)?'dup-row':''}">${selCell}<td>${handleCell(k)}</td>
       <td>${clsSel}</td>
       <td class="n">${v(k.followers)}</td>
       <td class="n">${v(k.avgViews)}</td>
@@ -610,6 +813,10 @@ function renderKolTable(){
   qsa('[data-sched]').forEach(b => b.addEventListener('click', () => schedForm(+b.dataset.sched)));
   qsa('[data-brief]').forEach(b => b.addEventListener('click', () => showCreatorBrief(+b.dataset.brief)));
   qsa('[data-del]').forEach(b => b.addEventListener('click', () => delKol(+b.dataset.del)));
+  qsa('.k-select').forEach(c => c.addEventListener('change', () => {
+    if(c.checked) kolSelected.add(c.dataset.ksel); else kolSelected.delete(c.dataset.ksel);
+    renderKolSelectionBar();
+  }));
   if(typeof wireCells === 'function') wireCells();
 }
 
@@ -988,7 +1195,7 @@ function renderKolContentAngles(){
    actual approve/reject call, same split as every other decision gate
    in this hub. Approving surfaces a direct "Schedule" CTA so the next
    step in the journey is one click away instead of a hunt. ── */
-let contentFilters = { kol:'', status:'' };
+let contentFilters = { kol:'', status:'', list:'' };
 function contentStatusName(k){ return (CONTENT_STATUSES.find(s => s.k === k) || {}).name || k; }
 function contentStatusTone(k){
   return k === 'approved' ? 'p-g' : k === 'rejected' ? 'p-r' : k === 'review' ? 'p-a' : k === 'submitted' ? 'p-v' : 'p-n';
@@ -1002,14 +1209,19 @@ function renderKolContentCuration(){
       <label>Creator <select id="contentKolFilter"><option value="">All</option>
         ${kols.map(h => `<option value="${esc(h)}"${contentFilters.kol===h?' selected':''}>${esc(h)}</option>`).join('')}</select></label>
       <label>Status <select id="contentStatusFilter"><option value="">All</option>
-        ${CONTENT_STATUSES.map(s => `<option value="${s.k}"${contentFilters.status===s.k?' selected':''}>${esc(s.name)}</option>`).join('')}</select></label>`;
+        ${CONTENT_STATUSES.map(s => `<option value="${s.k}"${contentFilters.status===s.k?' selected':''}>${esc(s.name)}</option>`).join('')}</select></label>
+      ${(S.kolLists||[]).length ? `<label>List <select id="contentListFilter"><option value="">All</option>
+        ${(S.kolLists||[]).map(l => `<option value="${l.id}"${contentFilters.list===l.id?' selected':''}>${esc(l.name)}</option>`).join('')}</select></label>` : ''}`;
     el('contentKolFilter').addEventListener('change', e => { contentFilters.kol = e.target.value; renderKolContentCuration(); });
     el('contentStatusFilter').addEventListener('change', e => { contentFilters.status = e.target.value; renderKolContentCuration(); });
+    const listSel = el('contentListFilter');
+    if(listSel) listSel.addEventListener('change', e => { contentFilters.list = e.target.value; renderKolContentCuration(); });
   }
 
   let list = (S.content || []).slice().sort((a,b) => (b.updatedAt||'').localeCompare(a.updatedAt||''));
   if(contentFilters.kol) list = list.filter(c => c.kol === contentFilters.kol);
   if(contentFilters.status) list = list.filter(c => c.status === contentFilters.status);
+  if(contentFilters.list) list = list.filter(c => handlesInList(contentFilters.list).includes(c.kol));
 
   const empty = el('contentEmpty');
   if(empty) empty.hidden = list.length > 0;
@@ -1307,9 +1519,12 @@ function renderKolSchedule(){
 function renderKolScheduleBoard(){
   const box = el('kolSchedBoard'); if(!box) return;
   const all = S.schedule || [];
-  const list = schedBoardFilters.type ? all.filter(e => e.type === schedBoardFilters.type) : all;
+  let list = schedBoardFilters.type ? all.filter(e => e.type === schedBoardFilters.type) : all;
+  if(schedBoardFilters.list) list = list.filter(e => handlesInList(schedBoardFilters.list).includes(e.kol));
 
   const filterBar = `<div class="sched-board-filters">
+    ${(S.kolLists||[]).length ? `<select id="schedBoardListFilter"><option value="">All lists</option>
+      ${(S.kolLists||[]).map(l => `<option value="${l.id}"${schedBoardFilters.list===l.id?' selected':''}>${esc(l.name)}</option>`).join('')}</select>` : ''}
     <select id="schedBoardTypeFilter"><option value="">Both — UGC and Livestream</option>
       ${Object.values(KOL_TYPES).map(t => `<option value="${t.k}"${schedBoardFilters.type===t.k?' selected':''}>${esc(t.name)} only</option>`).join('')}</select>
   </div>`;
@@ -1333,6 +1548,10 @@ function renderKolScheduleBoard(){
 
   el('schedBoardTypeFilter').addEventListener('change', e => {
     schedBoardFilters.type = e.target.value; renderKolScheduleBoard();
+  });
+  const boardListSel = el('schedBoardListFilter');
+  if(boardListSel) boardListSel.addEventListener('change', e => {
+    schedBoardFilters.list = e.target.value; renderKolScheduleBoard();
   });
 
   qsa('.sched-card', box).forEach(card => {
@@ -1398,7 +1617,8 @@ function renderKolScheduleCalendar(){
   const list = all.filter(e =>
     (!schedCalFilters.kol || e.kol === schedCalFilters.kol) &&
     (!schedCalFilters.type || e.type === schedCalFilters.type) &&
-    (!schedCalFilters.status || statusOf(e) === schedCalFilters.status));
+    (!schedCalFilters.status || statusOf(e) === schedCalFilters.status) &&
+    (!schedCalFilters.list || handlesInList(schedCalFilters.list).includes(e.kol)));
 
   const firstWeekday = new Date(Date.UTC(y, m, 1)).getUTCDay();
   const daysInMonth = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
@@ -1442,6 +1662,8 @@ function renderKolScheduleCalendar(){
           <option value="overdue"${schedCalFilters.status==='overdue'?' selected':''}>Overdue</option>
           <option value="done"${schedCalFilters.status==='done'?' selected':''}>Done</option>
         </select>
+        ${(S.kolLists||[]).length ? `<select id="calFilterList"><option value="">All lists</option>
+          ${(S.kolLists||[]).map(l => `<option value="${l.id}"${schedCalFilters.list===l.id?' selected':''}>${esc(l.name)}</option>`).join('')}</select>` : ''}
       </div>
     </div>
     <div class="cal-grid">${weekdayHead}${dayCells}</div>`;
@@ -1458,6 +1680,8 @@ function renderKolScheduleCalendar(){
   el('calFilterKol').addEventListener('change', e => { schedCalFilters.kol = e.target.value; renderKolScheduleCalendar(); });
   el('calFilterType').addEventListener('change', e => { schedCalFilters.type = e.target.value; renderKolScheduleCalendar(); });
   el('calFilterStatus').addEventListener('change', e => { schedCalFilters.status = e.target.value; renderKolScheduleCalendar(); });
+  const calListSel = el('calFilterList');
+  if(calListSel) calListSel.addEventListener('change', e => { schedCalFilters.list = e.target.value; renderKolScheduleCalendar(); });
   qsa('[data-cal-entry]', box).forEach(b => b.addEventListener('click', () => showScheduleEntry(b.dataset.calEntry)));
 }
 

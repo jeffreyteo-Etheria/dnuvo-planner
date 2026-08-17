@@ -52,7 +52,8 @@ function applyProposal(p){
     S.bundleOverrides[p.recId][p.field] = p.field === 'price' ? num(p.to) : p.to;
   } else if(p.type === 'month'){
     const m = S.months.find(x => x.k === p.recId);
-    if(m) m[p.field] = num(p.to);
+    if(m && p.field === 'budgetOverride' && p.to === '') delete m.budgetOverride;
+    else if(m) m[p.field] = num(p.to);
   } else if(p.type === 'kol'){
     const k = (S.kols||[]).find(x => x.id === p.recId);
     if(k) k[p.field] = p.to;
@@ -133,7 +134,12 @@ function wireCells(){
           S.bundleOverrides[id][field] = field==='price' ? num(next) : next;
         } else if(type === 'month'){
           const m = S.months.find(x=>x.k===id);
-          if(m) m[field] = num(next);
+          // A blank budgetOverride means "go back to the formula," not
+          // "override it to zero" — every other month field is always a
+          // real required number, so this is the one case that needs to
+          // distinguish "no value" from "cleared to 0".
+          if(m && field === 'budgetOverride' && next === '') delete m.budgetOverride;
+          else if(m) m[field] = num(next);
         }
         save(); renderAll();
       } else {
@@ -572,7 +578,9 @@ function renderPromoPriceTable(){
         const fee = feeFor(p.k);
         const afterFee = price * (1 - fee);
         const profit = afterFee - s.cogs - (s.shipping||0) - (s.handling||0);
-        const required = 3 * s.cogs;
+        const required = (S.settings.marginTargetMode === 'netMarginPct')
+          ? afterFee * ((S.settings.marginTargetPct||20)/100)
+          : 3 * s.cogs;
         return `<td><div class="pp-cell">
           <span class="pill ${ok?'p-g':'p-r'}">${ok?'Clears':'Below'} floor ${cur(fl)}</span>
           ${isAdmin() ? `<span class="pp-sub">Fee ${(fee*100).toFixed(0)}% · Profit ${cur(profit)} (need ${cur(required)})</span>` : ''}

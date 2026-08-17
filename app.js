@@ -45,6 +45,8 @@ function normalizeState(obj){
   s.schedule = s.schedule || [];
   s.content  = s.content  || [];
   s.contentTombstones = s.contentTombstones || [];
+  s.kolLists = s.kolLists || [];
+  s.kolListTombstones = s.kolListTombstones || [];
   s.sendLog  = s.sendLog  || [];
   s.eventStatus = s.eventStatus || {};
   s.expansion = s.expansion || {};
@@ -136,16 +138,28 @@ function toast(msg){
 /* Floor price. Computed server-side of the ACL boundary —
    team sees the result, never the cost that produced it. */
 /* Floor price for a SKU on a given platform — the minimum price that still
-   clears shipping, handling, COGS and the platform fee with 3×COGS left
-   over as profit. 4×COGS in the numerator = 1× to recover cost + 3× the
-   required margin. Shopify (0% fee) is the default since it's the lead
-   price every other channel is priced against. */
+   clears shipping, handling, COGS and the platform fee (plus an optional
+   extra commission cut, e.g. a livestream/affiliate booking — 0 unless
+   passed) with the required profit left over. Two ways to size that
+   required profit, chosen in Pricing (admin-only, S.settings.marginTargetMode):
+   'costMultiple' (default) targets 3×COGS profit — 4×COGS in the numerator
+   is 1× to recover cost + 3× that margin. 'netMarginPct' instead targets
+   marginTargetPct as a share of what's left after the platform's cut,
+   solved so (net proceeds) × (1 − marginPct) covers cost+shipping+handling.
+   Shopify (0% fee) is the default platform since it's the lead price every
+   other channel is priced against. */
 function feeFor(platformKey){
   const fees = (S.settings && S.settings.platformFees) || PLATFORM_FEES;
   return fees[platformKey] != null ? fees[platformKey] : 0;
 }
-function floorOf(sku, platformKey){
-  const fee = feeFor(platformKey || 'shopify');
+function floorOf(sku, platformKey, extraCommissionPct){
+  const fee = feeFor(platformKey || 'shopify') + ((extraCommissionPct||0) / 100);
+  const cost = sku.cogs + (sku.shipping||0) + (sku.handling||0);
+  const mode = (S.settings && S.settings.marginTargetMode) || 'costMultiple';
+  if(mode === 'netMarginPct'){
+    const marginPct = ((S.settings && S.settings.marginTargetPct) || 20) / 100;
+    return cost / ((1 - fee) * (1 - marginPct));
+  }
   return (4 * sku.cogs + (sku.shipping||0) + (sku.handling||0)) / (1 - fee);
 }
 function maxDiscount(sku, platformKey){
@@ -281,12 +295,14 @@ function computeBudget(){
     const meta = MONTHS[i];
     const rev = m.units * m.price;
     const profit = rev * margin;
-    const budget = i < 3 ? st.baseBudget : prevRev * reinvest;
+    const formulaBudget = i < 3 ? st.baseBudget : prevRev * reinvest;
+    const overridden = m.budgetOverride != null && m.budgetOverride !== '';
+    const budget = overridden ? num(m.budgetOverride) : formulaBudget;
     prevRev = rev;
     const split = (S.splitOverrides && S.splitOverrides[m.k]) || meta.split;
     const ch = {};
     Object.keys(meta.split).forEach(k => ch[k] = budget * (split[k] ?? meta.split[k]));
-    return { k:m.k, label:meta.label, units:m.units, price:m.price, rev, profit, budget, ch, meta, split };
+    return { k:m.k, label:meta.label, units:m.units, price:m.price, rev, profit, budget, formulaBudget, overridden, ch, meta, split };
   });
 }
 
@@ -1037,6 +1053,35 @@ function applyModuleVisibility(){
 }
 
 /* ═══════════ PRICING ═══════════ */
+/* Admin-only control for which profit target sizes the floor price —
+   see the comment above floorOf(). Hidden from team entirely, same as
+   the cost column itself; team only ever sees the resulting Floor number. */
+function renderMarginTargetBox(){
+  const box = el('marginTargetBox'); if(!box) return;
+  if(!isAdmin()){ box.innerHTML = ''; return; }
+  const mode = S.settings.marginTargetMode || 'costMultiple';
+  const pct = S.settings.marginTargetPct || 20;
+  box.innerHTML = `<div class="margin-target">
+    <label>Required profit <select id="marginModeSel">
+      <option value="costMultiple"${mode==='costMultiple'?' selected':''}>3× cost-of-goods (current default)</option>
+      <option value="netMarginPct"${mode==='netMarginPct'?' selected':''}>% of net proceeds after platform fee</option>
+    </select></label>
+    ${mode==='netMarginPct' ? `<label>Target <select id="marginPctSel">
+      ${[10,20,30].map(v => `<option value="${v}"${pct===v?' selected':''}>${v}%</option>`).join('')}
+    </select></label>
+    <span class="fh">20% is a commonly cited starting point for skincare D2C net margin — not a verified benchmark for this brand. Confirm against real targets before relying on it.</span>` : ''}
+  </div>`;
+  el('marginModeSel').addEventListener('change', e => {
+    S.settings.marginTargetMode = e.target.value;
+    save(); renderPricing();
+  });
+  const pctSel = el('marginPctSel');
+  if(pctSel) pctSel.addEventListener('change', e => {
+    S.settings.marginTargetPct = +e.target.value;
+    save(); renderPricing();
+  });
+}
+
 function renderPricing(){
   el('tierBox').innerHTML = TIERS.map(t =>
     `<div class="tier ${t.k}"><div class="tier-n">${esc(t.name)}</div>
@@ -1076,11 +1121,15 @@ function renderPricing(){
   }).join('') + `</tbody>`;
 
   wireCells();
+  renderMarginTargetBox();
 
+  const mode = (S.settings.marginTargetMode || 'costMultiple');
   el('floorHint').className = 'hint-bar warn';
   el('floorHint').innerHTML = isAdmin()
-    ? `<b>Floor formula.</b> (4×cost + shipping + handling) ÷ (1 − platform fee) — sized to leave 3×cost as profit after every cost is paid, on this column's Shopify-lead reference price. Confirm real cost, shipping and handling with the supplier before publishing any promotion.`
-    : `<b>Floor is already calculated.</b> It already accounts for cost, shipping, handling and platform fees — keep every promotion above the number shown. If a planned discount breaks it, use the simulator below and request a change — an administrator will review it.`;
+    ? (mode === 'netMarginPct'
+        ? `<b>Floor formula.</b> (cost + shipping + handling) ÷ [(1 − platform fee) × (1 − ${S.settings.marginTargetPct}%)] — sized to protect ${S.settings.marginTargetPct}% net margin on what's left after the platform's cut, on this column's Shopify-lead reference price. Confirm real cost, shipping and handling with the supplier before publishing any promotion.`
+        : `<b>Floor formula.</b> (4×cost + shipping + handling) ÷ (1 − platform fee) — sized to leave 3×cost as profit after every cost is paid, on this column's Shopify-lead reference price. Confirm real cost, shipping and handling with the supplier before publishing any promotion.`)
+    : `<b>Floor is already calculated.</b> Starting from the listed price, it nets out the planned discount, this platform's take-rate, any livestream/affiliate commission, shipping and product cost — what's left after that is protected as profit. Keep every promotion above the number shown. If a planned discount breaks it, use the simulator below and request a change — an administrator will review it.`;
 
   renderKeySellFocus();
 
@@ -1147,6 +1196,8 @@ function renderSim(){
       <select id="simCh">${platOpts}</select>
       <label>Discount <span class="sim-val" id="simPctV">15%</span></label>
       <input type="range" id="simPct" min="0" max="50" value="15">
+      ${isAdmin() ? `<label>Livestream/affiliate commission <span class="sim-val" id="simCommV">0%</span></label>
+      <input type="range" id="simComm" min="0" max="40" value="0">` : ''}
     </div>
     <div class="sim-out" id="simOut"></div>`;
 
@@ -1157,29 +1208,37 @@ function renderSim(){
   const upd = () => {
     const s = S.skus[+el('simSku').value];
     const platformKey = el('simCh').value;
-    const fee = feeFor(platformKey);
+    const commEl = el('simComm');
+    const commPct = commEl ? +commEl.value : 0;
+    if(commEl) el('simCommV').textContent = commPct + '%';
+    const fee = feeFor(platformKey) + (commPct/100);
     const pct = +el('simPct').value;
     el('simPctV').textContent = pct + '%';
     const net = s.sale * (1 - pct/100);
-    const fl = floorOf(s, platformKey);
+    const fl = floorOf(s, platformKey, commPct);
     const ok = net >= fl;
     const afterFee = net * (1 - fee);
     const netProfit = afterFee - s.cogs - (s.shipping||0) - (s.handling||0);
-    const requiredProfit = 3 * s.cogs;
+    const mode = S.settings.marginTargetMode || 'costMultiple';
+    const requiredProfit = mode === 'netMarginPct'
+      ? afterFee * ((S.settings.marginTargetPct||20)/100)
+      : 3 * s.cogs;
+    const requiredLabel = mode === 'netMarginPct' ? `${S.settings.marginTargetPct||20}% net margin` : '3× COGS profit';
     const profitOk = netProfit >= requiredProfit;
 
     const rows = [
       ['Listed price', cur(s.sale), ''],
       [`Discount ${pct}%`, '−' + cur(s.sale - net), ''],
       ['Customer pays', cur(net), 'hero'],
-      [`Platform fee (${(fee*100).toFixed(0)}%)`, '−' + cur(net - afterFee), '']
+      [`Platform fee (${(feeFor(platformKey)*100).toFixed(0)}%)`, '−' + cur(net * feeFor(platformKey)), '']
     ];
+    if(commPct) rows.push([`Livestream/affiliate commission (${commPct}%)`, '−' + cur(net * (commPct/100)), '']);
     if(isAdmin()){
       rows.push(['Shipping', costInput(s, 'shipping'), '']);
       rows.push(['Handling', costInput(s, 'handling'), '']);
       rows.push(['Cost of goods', cur(s.cogs), '']);
       rows.push(['Net profit', cur(netProfit), profitOk ? '' : 'fail']);
-      rows.push([profitOk ? 'Clears 3× COGS profit' : 'Below 3× COGS profit',
+      rows.push([profitOk ? `Clears ${requiredLabel}` : `Below ${requiredLabel}`,
         profitOk ? cur(netProfit - requiredProfit) + ' of headroom' : cur(requiredProfit - netProfit) + ' short',
         profitOk ? 'pass' : 'fail']);
     }
@@ -1208,8 +1267,9 @@ function renderSim(){
       else toast('That is already the current sale price');
     });
   };
-  ['simSku','simCh','simPct'].forEach(id => {
-    el(id).addEventListener('input', upd); el(id).addEventListener('change', upd);
+  ['simSku','simCh','simPct','simComm'].forEach(id => {
+    const node = el(id); if(!node) return;
+    node.addEventListener('input', upd); node.addEventListener('change', upd);
   });
   upd();
 }
@@ -1264,41 +1324,46 @@ function renderMedia(){
     }));
   }
 
-  const roasHead = budgetTableView === 'month' ? '<th class="n">Target ROAS</th><th class="n">Actual ROAS</th><th>Result</th>' : '';
-  const rowsSource = budgetTableView === 'month' ? [B[activeMonth]] : B;
-  el('budgetTable').innerHTML = `<thead><tr><th>Month</th><th class="n">Units</th><th class="n">Avg price</th>
+  const resultCol = budgetTableView === 'month' ? '<th>Result</th>' : '';
+  el('budgetTable').innerHTML = `<thead><tr><th>Month</th><th class="n">Units <span class="fh">(targeted SKU qty)</span></th>
+      <th class="n" title="Revenue ÷ units — the average value per unit sold, i.e. AOV in this model">Avg price (AOV)</th>
       <th class="n">Revenue</th>${canEdit?'<th class="n">Profit</th>':''}<th class="n">Budget</th>
-      ${chK.map(k=>`<th class="n">${CHAN_META[k].name}</th>`).join('')}${roasHead}</tr></thead><tbody>` +
-    rowsSource.map((b,rowI) => {
+      ${chK.map(k=>`<th class="n">${CHAN_META[k].name}</th>`).join('')}<th class="n">Target ROAS</th><th class="n">Actual ROAS</th>${resultCol}</tr></thead><tbody>` +
+    (budgetTableView === 'month' ? [B[activeMonth]] : B).map((b,rowI) => {
       const i = budgetTableView === 'month' ? activeMonth : rowI;
-      let roasCells = '';
-      if(budgetTableView === 'month'){
-        const target = targetRoasFor(i);
-        const actualRaw = (S.actuals[b.k]||{}).roas || '';
-        const actualNum = num(actualRaw);
-        const result = !actualRaw ? `<span class="pill p-n">No data yet</span>`
-          : actualNum >= target ? `<span class="pill p-g">On track</span>`
-          : `<span class="pill p-r">Behind</span>`;
-        roasCells = `<td class="n">${target.toFixed(2)}×</td>
-          <td class="n"><span class="ed" contenteditable="true" data-actroas="${b.k}">${esc(actualRaw)}</span></td>
-          <td>${result}</td>`;
-      }
+      const target = targetRoasFor(i);
+      const actualRaw = (S.actuals[b.k]||{}).roas || '';
+      const actualNum = num(actualRaw);
+      const result = budgetTableView === 'month'
+        ? `<td>${!actualRaw ? `<span class="pill p-n">No data yet</span>`
+            : actualNum >= target ? `<span class="pill p-g">On track</span>`
+            : `<span class="pill p-r">Behind</span>`}</td>`
+        : '';
+      const roasCells = `<td class="n">${target.toFixed(2)}×</td>
+          <td class="n"><span class="ed" contenteditable="true" data-actroas="${b.k}">${esc(actualRaw)}</span></td>${result}`;
       return `<tr>
       <td><b>${b.label}</b></td>
       <td class="n">${cell('month', b.k, 'units', b.units, b.label + ' — units target')}</td>
       <td class="n">${cell('month', b.k, 'price', b.price, b.label + ' — average price', {prefix:S.settings.cur})}</td>
       <td class="n">${cur(b.rev)}</td>
       ${canEdit?`<td class="n">${cur(b.profit)}</td>`:''}
-      <td class="n"><b style="color:var(--violet)">${cur(b.budget)}</b></td>
+      <td class="n"><b style="color:var(--violet)">${S.settings.cur}${cell('month', b.k, 'budgetOverride', Math.round(b.budget), b.label + ' — monthly budget (blank reverts to the flat/reinvest formula)')}</b>
+        ${canEdit && b.overridden ? `<button class="btn-line sm budget-reset" data-resetbudget="${b.k}" title="Clear the override — auto would be ${cur(b.formulaBudget)}">↺ auto</button>`
+          : `<span class="sub" style="display:block">${b.overridden ? 'overridden' : 'auto'}</span>`}</td>
       ${chK.map(k=>`<td class="n">${b.ch[k]?cur(b.ch[k]):'—'}</td>`).join('')}${roasCells}</tr>`;
     }).join('') +
     (budgetTableView === 'month' ? '' : `<tr class="tot"><td>Total</td><td class="n">${B.reduce((a,b)=>a+b.units,0).toLocaleString()}</td><td class="n">—</td>
       <td class="n">${cur(B.reduce((a,b)=>a+b.rev,0))}</td>
       ${canEdit?`<td class="n">${cur(B.reduce((a,b)=>a+b.profit,0))}</td>`:''}
       <td class="n">${cur(B.reduce((a,b)=>a+b.budget,0))}</td>
-      ${chK.map(k=>`<td class="n">${cur(B.reduce((a,b)=>a+(b.ch[k]||0),0))}</td>`).join('')}</tr>`) + `</tbody>`;
+      ${chK.map(k=>`<td class="n">${cur(B.reduce((a,b)=>a+(b.ch[k]||0),0))}</td>`).join('')}
+      <td class="n">—</td><td class="n">—</td></tr>`) + `</tbody>`;
 
   wireCells();
+  qsa('[data-resetbudget]').forEach(b => b.addEventListener('click', () => {
+    const m = S.months.find(x => x.k === b.dataset.resetbudget);
+    if(m){ delete m.budgetOverride; save(); renderAll(); toast('Back to the automatic budget'); }
+  }));
   qsa('[data-actroas]').forEach(c => c.addEventListener('blur', () => {
     const k = c.dataset.actroas;
     const raw = c.textContent.trim();
@@ -1908,15 +1973,20 @@ if(kolImportBtn && kolImportFile){
       // display name. "Done"/"Complete" only lands on the locked done stage
       // when the row also carries proof; otherwise it lands on Delivering
       // rather than falsely claiming a deliverable is complete.
+      // Returns '' rather than defaulting to 'sourced' when the file's stage
+      // text is blank or unrecognized — a NEW record still falls back to
+      // 'sourced' below, but an UPDATE must never use this to downgrade an
+      // existing record's real progress just because this particular file
+      // didn't carry a stage column.
       const normalizeStage = (raw, hasProof) => {
         const t = String(raw || '').trim();
-        if(!t) return 'sourced';
+        if(!t) return '';
         const byKey = KOL_PIPE.find(s => s.k === t);
         if(byKey) return (byKey.k === 'done' && !hasProof) ? 'live' : byKey.k;
         const byName = KOL_PIPE.find(s => s.name.toLowerCase() === t.toLowerCase());
         if(byName) return (byName.k === 'done' && !hasProof) ? 'live' : byName.k;
         if(/^complete$/i.test(t)) return hasProof ? 'done' : 'live';
-        return 'sourced';
+        return '';
       };
       let added = 0, updated = 0, skipped = 0, duplicateRows = 0, badHandleRows = 0;
       const seenFile = new Set();
@@ -1953,13 +2023,25 @@ if(kolImportBtn && kolImportFile){
         if(existingIdx.has(key)){
           if(!updateMode){ skipped++; return; }
           const i = existingIdx.get(key);
-          // Overwrite the file's fields but keep this record's id (so schedule
-          // links and Live sync's merge history stay attached to the same
-          // record) and its existing fit checklist (not part of this schema).
-          S.kols[i] = Object.assign({}, S.kols[i], fields);
+          // Field-level merge, not a blind overwrite: a blank cell in the
+          // file means "this row didn't check that field," not "clear it" —
+          // otherwise re-importing a partial sheet (e.g. one that only has
+          // outreach status, not contact/source) would erase real verified
+          // data the roster already has. Keeps this record's id (so schedule
+          // links and Live sync's merge history stay attached) and its
+          // existing fit checklist (not part of this schema).
+          const merged = Object.assign({}, S.kols[i]);
+          Object.keys(fields).forEach(fk => {
+            const v = fields[fk];
+            if(v === '' || v == null) return;
+            merged[fk] = v;
+          });
+          merged.updatedAt = new Date().toISOString();
+          S.kols[i] = merged;
           updated++;
           return;
         }
+        fields.stage = fields.stage || 'sourced';
         S.kols.push(Object.assign({ id: 'K'+Date.now().toString(36)+Math.random().toString(36).slice(2,5), fit:{} }, fields));
         existingIdx.set(key, S.kols.length - 1);
         added++;

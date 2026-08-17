@@ -19,7 +19,15 @@ const DEFAULTS = {
   socialHandles: { shopee:'shopee.sg/d.nuvo', tiktok:'@d.nuvo_official', shopify:'shop.dnuvo.com.sg' },
   platformsActive: { tiktok:true, instagram:true, facebook:false, shopee:true, lazada:false, shopify:true },
   competitorUrls: [],
-  promoPeriods: {}
+  promoPeriods: {},
+  // How the floor price's required profit is set. 'costMultiple' (default,
+  // unchanged from before this setting existed) targets 3x cost-of-goods
+  // as profit. 'netMarginPct' instead targets marginTargetPct as a share of
+  // net proceeds after the platform fee — a common way skincare D2C brands
+  // frame margin, but 20% here is a general industry starting point, not a
+  // verified benchmark for this brand specifically. Admin-only to change.
+  marginTargetMode: 'costMultiple',
+  marginTargetPct: 20
 };
 
 /* ── Kanban columns for the KOL schedule. Separate from `done` (which
@@ -126,7 +134,7 @@ const SHOPFRONT_PLATFORMS = [
 const SHOPFRONT_LINK_DEFAULTS = {
   shopee: 'https://shopee.sg/d.nuvo',
   lazada: 'https://www.lazada.sg/dnuvo',
-  tiktok: ''
+  tiktok: 'https://www.tiktok.com/@d.nuvo_official'
 };
 
 /* ── Masstige tiering ── */
@@ -1067,13 +1075,14 @@ const METRICS = [
 const PROPOSABLE = {
   sku:    ['sale','handle','url'],
   bundle: ['price','handle','url'],
-  month:  ['units','price'],
+  month:  ['units','price','budgetOverride'],
   kol:    ['fee','rate']
 };
 
 const FIELD_LABELS = {
   sale:'Sale price', price:'Price', units:'Units target',
-  handle:'Shop handle', url:'Shop URL', cogs:'Cost per unit'
+  handle:'Shop handle', url:'Shop URL', cogs:'Cost per unit',
+  budgetOverride:'Monthly budget override'
 };
 
 /* ════════════════════════════════════════════════
