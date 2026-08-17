@@ -2086,8 +2086,8 @@ if(kolImportBtn && kolImportFile){
 const schedTplBtn = el('schedTpl');
 if(schedTplBtn) schedTplBtn.addEventListener('click', () => {
   const rows = [
-    ['handle','platform','type','deliverable','date','time','owner','note','gmv','fee','commission','proofLink','adCode','list'],
-    ['@creator_handle','Shopee Live','live','Live session','2026-07-08','20:00','','offer/voucher notes','','','25%','','','Campaign A list']
+    ['handle','platform','type','deliverable','date','time','owner','note','gmv','fee','commission','proofLink','adCode','board','list'],
+    ['@creator_handle','Shopee Live','live','Live session','2026-07-08','20:00','','offer/voucher notes','','','25%','','','planned','Campaign A list']
   ];
   if(typeof toCSV === 'function' && typeof dl === 'function'){
     dl('dnuvo-schedule-import-template-' + stamp() + '.csv', toCSV(rows), 'text/csv;charset=utf-8');
@@ -2145,13 +2145,15 @@ if(schedImportBtn && schedImportFile){
         const dupKey = [hk, date, time, what].join('|');
         if(seenKey.has(dupKey)){ skipped++; return; }
         seenKey.add(dupKey);
+        const boardRaw = String(x.board || x.status || '').trim().toLowerCase();
+        const board = SCHED_BOARD.some(b => b.k === boardRaw) ? boardRaw : 'planned';
         S.schedule = S.schedule || [];
         S.schedule.push({
           id: 'E'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
           kol: k.handle, type: k.type || type, what, date, time,
           owner: x.owner || '', note: x.note || '',
           proofLink: x.prooflink || '', adCode: x.adcode || '', gmv: x.gmv || '',
-          done:false, board:'planned',
+          done: board === 'done', board,
           feeAgreed: num(x.fee) || num(k.type==='live' ? k.fee : k.rate) || 0, paidStatus:'unpaid',
           at:new Date().toISOString(), updatedAt:new Date().toISOString()
         });

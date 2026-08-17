@@ -938,6 +938,11 @@ tr.row-flash td{animation:rowflash 1.3s ease-in-out 2}
 .dup-watch{margin-top:11px;border:1px solid rgba(190,54,72,.24);background:var(--red-lt);color:var(--red);
   border-radius:7px;padding:10px 12px;font-size:12.5px;line-height:1.5}
 .dup-watch b{margin-right:7px}
+.audit-sec{margin-bottom:20px}
+.audit-sec:last-child{margin-bottom:0}
+.audit-sec-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.audit-sec-h b{font-size:14px}
+.audit-total{margin-left:auto;font-family:var(--m);font-size:14px;font-weight:700;color:var(--violet)}
 .ksel-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:12px 0;padding:10px 13px;
   border:1px solid var(--violet);background:var(--violet-lt);border-radius:7px;font-size:12.5px}
 .ksel-bar.ksel-idle{border-color:var(--line);background:var(--line-2);color:var(--faint)}
@@ -1069,7 +1074,14 @@ tr.row-flash td{animation:rowflash 1.3s ease-in-out 2}
 /* schedule */
 tr.sc-done td{opacity:.55}
 tr.sc-late td{background:rgba(168,50,60,.04)}
+tr.sc-noproof td{opacity:1}
 .crm-hint{display:block;margin-top:5px;font-size:11.5px;opacity:.75}
+
+/* missing proof-of-delivery flag — a soft warning, not a block: the row is
+   still counted as complete/delivered, just visibly unverified. */
+.proof-warn{color:var(--amber);font-family:var(--m);font-size:11px;font-weight:600;cursor:help}
+tr.proof-missing-row{background:var(--amber-lt)}
+.sc-proof.warn{color:var(--amber);font-weight:600}
 
 @media(max-width:1180px){
   .pb-bands,.pb-scen{grid-template-columns:1fr 1fr}

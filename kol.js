@@ -333,6 +333,14 @@ function hasProof(k){
   if(k.proofLink) return true;
   return (S.schedule || []).some(e => e.kol === k.handle && e.proofLink);
 }
+/* Whether a Done transition can proceed without a proof-of-delivery link.
+   UGC posts should always have a shareable link, so that stays a hard
+   requirement; a livestream session often has no public recording, so it
+   can still be marked delivered — just flagged in the weekly audit rather
+   than silently trusted as verified. */
+function canSkipProofForDone(k){
+  return !!(k && k.type === 'live');
+}
 /* Payment status on a schedule entry — admin edits, team reads only,
    same split as fee/rate pricing elsewhere in KOL hub. */
 function payCell(e){
@@ -397,6 +405,7 @@ function renderKol(){
   renderKolSelectionBar();
   renderKolContentAngles();
   renderKolContentCuration();
+  renderKolWeeklyAudit();
   renderKolActivation();
   renderKolPayments();
   renderKolBudgetDrilldown();
@@ -785,6 +794,8 @@ function renderKolTable(){
     const del = canDelete(k);
     const stageSel = `<select class="k-stage" data-i="${i}">${KOL_PIPE.map(s =>
       `<option value="${s.k}"${k.stage===s.k?' selected':''}>${s.name}</option>`).join('')}</select>`;
+    const missingProof = k.stage === 'done' && !hasProof(k);
+    const proofWarn = missingProof ? ` <span class="proof-warn" title="Marked complete without a proof link">⚠</span>` : '';
     const clsSel = `<select class="k-class" data-class="${i}">
       ${['Creator','Artiste'].map(c => `<option value="${c}"${inferredCreatorClass(k)===c?' selected':''}>${c}</option>`).join('')}</select>`;
     const rating = creatorRating(k);
@@ -800,7 +811,7 @@ function renderKolTable(){
     </div>`;
 
     if(kolTab === 'ugc'){
-      return `<tr class="${duplicateInfoFor(k)?'dup-row':''}">${selCell}<td>${handleCell(k)}</td>
+      return `<tr class="${duplicateInfoFor(k)?'dup-row':''} ${missingProof?'proof-missing-row':''}">${selCell}<td>${handleCell(k)}</td>
         <td>${clsSel}</td>
         <td><span class="pill p-n">${esc(followerTier(k)||k.tier||'—')}</span></td>
         <td class="n">${v(k.followers)}</td>
@@ -811,7 +822,7 @@ function renderKolTable(){
         <td style="font-size:12px">${contactCell(k)}</td>
         <td class="n">${k.rate?esc(S.settings.cur+k.rate):'<span class="nv">—</span>'}${kolPendingBadge(k,'rate')}</td>
         <td>${schedCell(k)}</td>
-        <td>${stageSel}</td><td>${acts}</td></tr>`;
+        <td>${stageSel}${proofWarn}</td><td>${acts}</td></tr>`;
     }
 
     const g = computeGpm(k);
@@ -825,7 +836,7 @@ function renderKolTable(){
          <span class="sub">${k.fee?esc(S.settings.cur+k.fee):'no fixed fee'}${k.commission?' + '+esc(k.commission):''}</span>`
       : `<span class="pill ${sc.tone}">${sc.name}</span>
          <span class="sub">${sc.fee?S.settings.cur+sc.fee.toLocaleString()+' + '+sc.comm+'%':'commission only'}${sc.capped?' · capped':''}</span>`;
-    return `<tr class="${duplicateInfoFor(k)?'dup-row':''}">${selCell}<td>${handleCell(k)}</td>
+    return `<tr class="${duplicateInfoFor(k)?'dup-row':''} ${missingProof?'proof-missing-row':''}">${selCell}<td>${handleCell(k)}</td>
       <td>${clsSel}</td>
       <td class="n">${v(k.followers)}</td>
       <td class="n">${v(k.avgViews)}</td>
@@ -836,7 +847,7 @@ function renderKolTable(){
       <td class="n"><span class="fit-s ${fit>=10?'f3':fit>=8?'f2':fit>=5?'f1':'f0'}">${fit}/10</span></td>
       <td>${termsCell}</td>
       <td style="font-size:12px">${contactCell(k)}</td>
-      <td>${stageSel}</td><td>${acts}</td></tr>`;
+      <td>${stageSel}${proofWarn}</td><td>${acts}</td></tr>`;
   }).join('') + `</tbody>`;
 
   qsa('.k-class').forEach(s => s.addEventListener('change', () => {
@@ -849,8 +860,12 @@ function renderKolTable(){
     const k = S.kols[+s.dataset.i];
     const next = KOL_PIPE.find(p => p.k === s.value);
     if(next.k === 'done' && !hasProof(k)){
-      toast('Add a posting/stream link (proof of delivery) before marking this Complete');
-      s.value = k.stage; return;
+      if(canSkipProofForDone(k)){
+        toast('Marked Complete — no proof link on file, flagged in the weekly audit');
+      } else {
+        toast('Add a posting/stream link (proof of delivery) before marking this Complete');
+        s.value = k.stage; return;
+      }
     }
     k.stage = s.value; k.updatedAt = new Date().toISOString(); save(); renderKol(); renderOverview();
   }));
@@ -1518,7 +1533,8 @@ function renderKolSchedule(){
     list.map(e => {
       const past = e.date < today;
       const kol = S.kols.find(x => x.handle === e.kol);
-      return `<tr class="${e.done?'sc-done':past&&!e.done?'sc-late':''}">
+      const noProof = e.done && !e.proofLink;
+      return `<tr class="${e.done?'sc-done':past&&!e.done?'sc-late':''} ${noProof?'sc-noproof':''}">
         <td class="n"><b>${esc(e.date)}</b></td>
         <td class="n">${esc(e.time||'')}</td>
         <td><b>${esc(e.kol)}</b></td>
@@ -1528,7 +1544,7 @@ function renderKolSchedule(){
         <td style="font-size:12px;color:var(--mute)">${esc(e.note||'')}</td>
         <td>${e.proofLink
           ?`<a href="${esc(e.proofLink)}" target="_blank" rel="noopener" class="k-handle-link">Link</a>`
-          :`<button class="btn-line sm" data-scproof="${e.id}">Add link</button>`}</td>
+          :`<button class="btn-line sm" data-scproof="${e.id}">Add link</button>${noProof?' <span class="proof-warn" title="Marked delivered without a proof link">⚠</span>':''}`}</td>
         <td>${e.done?`<span class="pill p-g">Done</span>`
               :past?`<span class="pill p-r">Overdue</span>`
               :`<span class="pill p-a">Booked</span>`}</td>
@@ -1547,8 +1563,13 @@ function renderKolSchedule(){
   qsa('[data-scdone]').forEach(b => b.addEventListener('click', () => {
     const e = S.schedule.find(x=>x.id===b.dataset.scdone);
     if(!e.done && !e.proofLink){
-      toast('Add a proof-of-delivery link before marking this done — open the entry from the Calendar to add one');
-      return;
+      const k = S.kols.find(x=>x.handle===e.kol);
+      if(canSkipProofForDone(k)){
+        toast('Marked delivered — no proof link on file, flagged in the weekly audit');
+      } else {
+        toast('Add a proof-of-delivery link before marking this done — open the entry from the Calendar to add one');
+        return;
+      }
     }
     e.done = !e.done; e.board = e.done ? 'done' : 'planned'; e.updatedAt = new Date().toISOString();
     save(); renderKol();
@@ -1615,7 +1636,7 @@ function renderKolScheduleBoard(){
           ${spendFor(e) ? `<span class="sc-fee">${esc(S.settings.cur)}${Math.round(spendFor(e)).toLocaleString()} · ${
             (e.paidStatus||'unpaid')==='paid'?'Paid':(e.paidStatus||'unpaid')==='deposit'?'Deposit paid':'Unpaid'}</span>` : ''}
           ${e.gmv ? `<span class="sc-fee">GMV ${esc(S.settings.cur)}${Number(e.gmv).toLocaleString()}</span>` : ''}
-          <span class="sc-proof ${e.proofLink?'has':''}">${e.proofLink?'Proof on file':'No proof yet'}</span>
+          <span class="sc-proof ${e.proofLink?'has':col.k==='done'?'warn':''}">${e.proofLink?'Proof on file':col.k==='done'?'⚠ No proof — flagged':'No proof yet'}</span>
         </div>`).join('') || '<p class="sched-empty">Nothing here</p>'}
       </div>
     </div>`;
@@ -1652,9 +1673,14 @@ function renderKolScheduleBoard(){
       if(!e) return;
       const colKey = col.dataset.coldrop;
       if(colKey === 'done' && !e.proofLink){
-        toast('Add a proof-of-delivery link before moving this to Done');
-        renderKolScheduleBoard();
-        return;
+        const k = (S.kols||[]).find(x=>x.handle===e.kol);
+        if(canSkipProofForDone(k)){
+          toast('Marked delivered — no proof link on file, flagged in the weekly audit');
+        } else {
+          toast('Add a proof-of-delivery link before moving this to Done');
+          renderKolScheduleBoard();
+          return;
+        }
       }
       e.board = colKey;
       e.done = (colKey === 'done');
@@ -1768,6 +1794,7 @@ function showScheduleEntry(id){
   if(!e) return;
   const today = new Date().toISOString().slice(0,10);
   const past = e.date < today;
+  const kolRec = S.kols.find(x => x.handle === e.kol);
   const statusPill = e.done ? `<span class="pill p-g">Done</span>`
     : past ? `<span class="pill p-r">Overdue</span>`
     : `<span class="pill p-a">Booked</span>`;
@@ -1794,7 +1821,7 @@ function showScheduleEntry(id){
     <div class="mf2">
       <div class="mf"><label>Proof of delivery link</label>
         <input id="seProof" value="${esc(e.proofLink||'')}" placeholder="posted content or stream link">
-        <p class="fh">Required before this can be marked done.</p></div>
+        <p class="fh">${canSkipProofForDone(kolRec)?'Recommended before marking done — livestream sessions can be marked done without one, but get flagged in the weekly audit.':'Required before this can be marked done.'}</p></div>
       <div class="mf"><label>Ad code</label><input id="seAdCode" value="${esc(e.adCode||'')}" placeholder="if issued"></div>
     </div>`,
     [['Close','x'], ['Calendar','ics'], [e.done?'Reopen':'Mark done','done'],
@@ -1803,8 +1830,12 @@ function showScheduleEntry(id){
       if(a === 'done'){
         const proofNow = el('seProof').value.trim();
         if(!e.done && !proofNow){
-          toast('Add a proof-of-delivery link before marking this done');
-          return false;
+          if(canSkipProofForDone(kolRec)){
+            toast('Marked delivered — no proof link on file, flagged in the weekly audit');
+          } else {
+            toast('Add a proof-of-delivery link before marking this done');
+            return false;
+          }
         }
         e.proofLink = proofNow; e.adCode = el('seAdCode').value.trim();
         e.done = !e.done; e.board = e.done ? 'done' : 'planned'; e.updatedAt = new Date().toISOString();
@@ -2049,6 +2080,125 @@ function renderKolBudgetDrilldown(){
             <td class="n"><b>${esc(c)}${Math.round(spendFor(e)).toLocaleString()}</b></td></tr>`).join('')}</tbody>
         </table></div>`
       : `<p class="empty">No deliverables scheduled in ${esc(d.month)} yet.</p>`}`;
+}
+
+/* ── weekly audit — the whole roster grouped by where it actually sits,
+   spanning UGC and Livestream together (this is a cross-cutting check,
+   not scoped to whichever tab happens to be open in Creators). Four
+   buckets: pre-schedule outreach, booked-but-not-confirmed, confirmed,
+   and delivered-to-date — with spend totals on the three that carry one,
+   since that's the number a weekly review actually needs to see move. ── */
+function kolTypePill(k){
+  const t = KOL_TYPES[k.type||'ugc'];
+  return `<span class="pill ${t?t.pill:'p-n'}">${t?t.short:'—'}</span>`;
+}
+function renderKolWeeklyAudit(){
+  const box = el('kolWeeklyAudit'); if(!box) return;
+  const all = S.kols || [];
+  const sched = S.schedule || [];
+
+  const contacted = all.filter(k => k.stage === 'contacted' || k.stage === 'negotiating')
+    .sort((a,b) => (b.updatedAt||'').localeCompare(a.updatedAt||''));
+  const planned = sched.filter(e => schedBoardOf(e) === 'planned');
+  const confirmed = sched.filter(e => ['confirmed','live'].includes(schedBoardOf(e)));
+  const deliveredSched = sched.filter(e => schedBoardOf(e) === 'done');
+  const deliveredSchedHandles = new Set(deliveredSched.map(e => e.kol));
+  /* Many delivered UGC posts are logged straight onto the roster via CSV
+     (proofLink + stage:'done') with no discrete schedule/date entry —
+     count those as delivered too, rather than only what has a booked date. */
+  const deliveredKolOnly = all.filter(k => k.stage === 'done' && !deliveredSchedHandles.has(k.handle));
+  const delivered = [
+    ...deliveredSched.map(e => ({ kind:'sched', e, k: all.find(x=>x.handle===e.kol) })),
+    ...deliveredKolOnly.map(k => ({ kind:'kol', k }))
+  ];
+
+  const c = S.settings.cur;
+  const spendTotal = list => list.reduce((a,e) => a + spendFor(e), 0);
+  const deliveredSpendTotal = delivered.reduce((a,d) => a + (d.kind==='sched' ? spendFor(d.e) : creatorSpendTotal(d.k.handle)), 0);
+
+  const section = (title, note, bodyHtml, total) => `<div class="audit-sec">
+    <div class="audit-sec-h"><b>${esc(title)}</b><span class="fh">${esc(note)}</span>
+      ${total != null ? `<span class="audit-total">${esc(c)}${Math.round(total).toLocaleString()}</span>` : ''}</div>
+    ${bodyHtml}
+  </div>`;
+
+  const kolLink = k => k.introLink || k.source || '';
+
+  const contactedBody = contacted.length ? `<div class="tb-wrap"><table class="tb">
+      <thead><tr><th>Creator</th><th>Stage</th><th>Intro/source link</th><th>Notes</th><th class="n">Updated</th></tr></thead>
+      <tbody>${contacted.map(k => `<tr><td><b>${esc(k.handle)}</b> ${kolTypePill(k)}</td>
+        <td>${esc((KOL_PIPE.find(s=>s.k===k.stage)||{}).name||k.stage)}</td>
+        <td>${kolLink(k)?`<a href="${esc(kolLink(k))}" target="_blank" rel="noopener" class="k-handle-link">Open</a>`:'<span class="nv">not verified</span>'}</td>
+        <td style="font-size:12px;color:var(--mute)">${esc((k.notes||'').slice(0,80))}${(k.notes||'').length>80?'...':''}</td>
+        <td class="n" style="font-size:11.5px;color:var(--faint)">${esc((k.updatedAt||'').slice(0,10))}</td></tr>`).join('')}</tbody>
+    </table></div>` : `<p class="empty">Nothing contacted or under negotiation right now.</p>`;
+
+  const schedRow = e => { const k = all.find(x=>x.handle===e.kol); return `<tr>
+    <td><b>${esc(e.kol)}</b> ${k?kolTypePill(k):''}</td>
+    <td class="n">${esc(e.date)}</td><td>${esc(e.what)}</td>
+    <td class="n">${esc(c)}${Math.round(spendFor(e)).toLocaleString()}</td>`; };
+
+  /* Team/admin can move a booked or confirmed session straight to
+     Completed from here — livestream sessions often have no shareable
+     recording, so this is allowed without a proof link, just flagged
+     (see canSkipProofForDone) rather than blocked outright. */
+  const markDeliveredCell = e => `<td><button class="btn-line sm" data-auditdone="${e.id}">Mark delivered</button></td>`;
+
+  const plannedBody = planned.length ? `<div class="tb-wrap"><table class="tb">
+      <thead><tr><th>Creator</th><th class="n">Date</th><th>Deliverable</th><th class="n">Budget</th><th>Intro link</th><th></th></tr></thead>
+      <tbody>${planned.map(e => { const k = all.find(x=>x.handle===e.kol);
+        return schedRow(e) + `<td>${k&&kolLink(k)?`<a href="${esc(kolLink(k))}" target="_blank" rel="noopener" class="k-handle-link">Open</a>`:'<span class="nv">not verified</span>'}</td>` + markDeliveredCell(e) + `</tr>`;
+      }).join('')}</tbody>
+    </table></div>` : `<p class="empty">Nothing booked-but-not-confirmed right now.</p>`;
+
+  const confirmedBody = confirmed.length ? `<div class="tb-wrap"><table class="tb">
+      <thead><tr><th>Creator</th><th class="n">Date</th><th>Deliverable</th><th class="n">Budget</th><th>Status</th><th></th></tr></thead>
+      <tbody>${confirmed.map(e => schedRow(e) + `<td><span class="pill ${SCHED_BOARD_TONE[schedBoardOf(e)]||'p-n'}">${esc((SCHED_BOARD.find(s=>s.k===schedBoardOf(e))||{}).name||schedBoardOf(e))}</span></td>` + markDeliveredCell(e) + `</tr>`).join('')}</tbody>
+    </table></div>` : `<p class="empty">Nothing confirmed right now.</p>`;
+
+  const proofCell = link => link
+    ? `<a href="${esc(link)}" target="_blank" rel="noopener" class="k-handle-link">Open</a>`
+    : `<span class="proof-warn" title="Marked complete/delivered without a proof link">⚠ missing proof</span>`;
+
+  const deliveredBody = delivered.length ? `<div class="tb-wrap"><table class="tb">
+      <thead><tr><th>Creator</th><th class="n">Date</th><th class="n">Spend</th><th class="n">GMV</th><th>Proof</th></tr></thead>
+      <tbody>${delivered.map(d => {
+        if(d.kind === 'sched'){
+          const e = d.e, k = d.k;
+          return `<tr class="${!e.proofLink?'proof-missing-row':''}"><td><b>${esc(e.kol)}</b> ${k?kolTypePill(k):''}</td><td class="n">${esc(e.date)}</td>
+          <td class="n">${esc(c)}${Math.round(spendFor(e)).toLocaleString()}</td>
+          <td class="n">${e.gmv?esc(c)+Number(e.gmv).toLocaleString():'<span class="nv">—</span>'}</td>
+          <td>${proofCell(e.proofLink)}</td></tr>`;
+        }
+        const k = d.k, spend = creatorSpendTotal(k.handle);
+        return `<tr class="${!k.proofLink?'proof-missing-row':''}"><td><b>${esc(k.handle)}</b> ${kolTypePill(k)}</td><td class="n"><span class="nv">no schedule entry</span></td>
+        <td class="n">${spend?esc(c)+Math.round(spend).toLocaleString():'<span class="nv">—</span>'}</td>
+        <td class="n"><span class="nv">—</span></td>
+        <td>${proofCell(k.proofLink)}</td></tr>`;
+      }).join('')}</tbody>
+    </table></div>` : `<p class="empty">Nothing delivered yet.</p>`;
+
+  box.innerHTML =
+    section(`Contacted / proposed (${contacted.length})`, 'pre-schedule outreach — no budget committed yet', contactedBody) +
+    section(`Scheduled (${planned.length})`, 'booked, not yet confirmed', plannedBody, planned.length?spendTotal(planned):null) +
+    section(`Confirmed (${confirmed.length})`, 'terms locked and/or live now — this is the number that matters most for a weekly review', confirmedBody, confirmed.length?spendTotal(confirmed):null) +
+    section(`Completed / delivered to date (${delivered.length})`, 'proof on file where verified — rows flagged ⚠ are marked complete without a proof link', deliveredBody, delivered.length?deliveredSpendTotal:null);
+
+  qsa('[data-auditdone]', box).forEach(b => b.addEventListener('click', () => {
+    const e = (S.schedule||[]).find(x => x.id === b.dataset.auditdone);
+    if(!e) return;
+    const k = (S.kols||[]).find(x=>x.handle===e.kol);
+    if(!e.proofLink){
+      if(canSkipProofForDone(k)){
+        toast('Marked delivered — no proof link on file, flagged above');
+      } else {
+        toast('Add a proof-of-delivery link before marking this delivered — use the Schedule tab to add one');
+        return;
+      }
+    }
+    e.board = 'done'; e.done = true; e.updatedAt = new Date().toISOString();
+    save(); renderKol();
+  }));
 }
 
 function renderKolActivation(){
