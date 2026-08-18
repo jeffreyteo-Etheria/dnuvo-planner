@@ -775,22 +775,6 @@ const CONTENT_FORMATS = [
   { k:'myth-bust',            name:'Myth-busting explainer (short video)', focus:'Educational' }
 ];
 
-/* ── URL-to-social-content prompt builder (KOL hub, Creators tab) — content
-   type framing for whatever article/post URL gets pasted in. Mirrors the
-   url-to-social-content skill's package shape (headline/angle/theme/points/
-   stat/image-prompt/alt-text), routed through d.nuvo's own message stack
-   and claim policy instead of a generic brand voice. ── */
-const URL_CONTENT_TYPES = [
-  { k:'educational', name:'Educational', lane:'Educational',
-    framing:'Infographic-first — a mechanism or "how it works" diagram, not a lifestyle photo. Numbered steps or a simple before/after of the skin barrier read well here.' },
-  { k:'promotional', name:'Promotional', lane:'Differentiation',
-    framing:'Offer or bundle push with exactly one call to action. Product render or flat-lay, price/bundle framing only if a real, current offer is supplied — never invent a discount.' },
-  { k:'benefits', name:'Benefits', lane:'Emotional',
-    framing:'Outcome-focused — what changes for the skin. A short checklist or a before/after layout works better than a single hero claim.' },
-  { k:'science', name:'Science-backed challenge', lane:'Credibility',
-    framing:'Myth-bust or day-by-day challenge framing, grounded only in what the source article itself documents — this is the format most likely to tempt an invented statistic, so the claim ceiling matters most here.' }
-];
-
 /* ── Independent module catalog (orchestrated from AI Strategy) ── */
 const MODULE_CATALOG = [
   { id:'strategy',   name:'Strategy',          view:'strategy',   role:'All roles', defaultOn:true },

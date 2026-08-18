@@ -410,6 +410,7 @@ function renderKol(){
   renderDuplicateWatch();
   renderKolTable();
   renderKolSelectionBar();
+  if(typeof renderPromoPicker === 'function') renderPromoPicker();
   renderKolContentAngles();
   renderKolContentCuration();
   renderKolWeeklyAudit();

@@ -377,7 +377,7 @@
          ④ channel allocation (% control) → ⑤ schedule + insights. ═══════ -->
     <section class="view" data-view="media">
       <div class="panel">
-        <div class="p-h"><span class="step-chip">1</span><h3>Media plan goal &amp; month focus</h3><span class="p-note">pick a month to work on — everything below reacts to this</span></div>
+        <div class="p-h"><span class="step-chip">1</span><h3>Media plan goal &amp; month focus</h3><span class="p-note">click a month to narrow the budget table below to just that month, and to focus the ROAS/KPI, channel allocation and schedule steps on it too</span></div>
         <div id="mediaGoalReadout"></div>
         <div class="month-focus" id="mediaMonthFocus"></div>
       </div>
@@ -390,7 +390,9 @@
             <button class="btn-line sm on" id="budgetViewAll">All months</button>
             <button class="btn-line sm" id="budgetViewMonth">Selected month</button>
           </div>
+          <button class="btn-solid sm" id="budgetSaveBtn">Save for everyone</button>
         </div>
+        <div class="hint-bar" id="budgetSyncStatus"></div>
         <div class="tb-wrap"><table class="tb" id="budgetTable"></table></div>
         <div class="hint-bar" id="monthKpiFocus" hidden></div>
         <div class="hint-bar" id="goalCheck"></div>
@@ -605,27 +607,31 @@
         </div>
 
         <div class="panel">
-          <div class="p-h"><h3>Build social content from a URL</h3>
-            <span class="p-note">analyze an article or post, redesign it through d.nuvo's brand lens — nothing published without human review</span></div>
+          <div class="p-h"><h3>Build a KOL/product promo post</h3>
+            <span class="p-note">ready-to-post copy in d.nuvo's standard layout, grounded in a real partnership angle — no synthetic images, real photo only</span></div>
           <div class="research">
             <div class="res-row">
-              <input id="ugcUrl" placeholder="https://... article or social post URL" autocomplete="off">
-              <select id="ugcType">
-                <!-- populated from URL_CONTENT_TYPES -->
+              <select id="promoSource">
+                <option value="kol">KOL creator</option>
+                <option value="product">Product only</option>
               </select>
-              <select id="ugcAspect">
+              <select id="promoKolPick"></select>
+              <select id="promoProductPick" hidden></select>
+              <select id="promoAngle"></select>
+              <select id="promoAspect">
                 <option value="16:9">16:9</option>
                 <option value="1:1">1:1</option>
               </select>
-              <button class="btn-solid" id="genUrlPrompt">Build prompt</button>
+              <button class="btn-solid" id="genPromoPrompt">Build promo post</button>
             </div>
-            <div class="prompt-out" id="urlPromptOut" hidden>
-              <div class="po-h"><span>Paste this into ChatGPT, Copilot, Gemini, or your image tool of choice</span>
-                <button class="btn-line sm" id="copyUrlPrompt">Copy</button></div>
-              <pre id="urlPromptText"></pre>
-              <div class="po-warn"><b>Claim ceiling.</b> Every fact and stat in the result must trace back to the
-                source article — nothing invented, nothing estimated. The output is labeled Pending Review; check
-                it against d.nuvo's claim policy yourself before it goes anywhere near a post.</div>
+            <div class="prompt-out" id="promoPromptOut" hidden>
+              <div class="po-h"><span>Paste this into ChatGPT, Copilot, Gemini, or your caption tool of choice</span>
+                <button class="btn-line sm" id="copyPromoPrompt">Copy</button></div>
+              <pre id="promoPromptText"></pre>
+              <div class="po-warn"><b>Real photo only — this is text, not an image request.</b> Use the actual product
+                photo from the Shopify listing or the creator's own posted content; d.nuvo does not use AI-rendered
+                photography. Every claim traces to this angle's own vetted proof requirement. Output is Pending
+                Review — check it before it goes near a post.</div>
             </div>
           </div>
         </div>

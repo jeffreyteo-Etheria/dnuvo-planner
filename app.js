@@ -1389,8 +1389,12 @@ function renderMedia(){
       renderAlloc();
       renderSplitSuggestion();
       renderMediaKpiScorecard();
-      if(budgetTableView === 'month') renderMedia();
       if(typeof renderKolBudgetDrilldown === 'function') renderKolBudgetDrilldown();
+      // Picking a month here is the whole point of this panel — narrow the
+      // Budget table below to just that month instead of leaving the click
+      // with no visible effect on the table everyone actually looks at.
+      // "All months" stays one click away for a full comparison.
+      setBudgetTableView('month');
     }));
   }
 
@@ -1451,6 +1455,7 @@ function renderMedia(){
       <td class="n">—</td><td class="n">—</td></tr>
       <tr class="tot"><td colspan="${4+(canEdit?1:0)}" class="n">of which MY → Shopify</td><td class="n" colspan="${1+chColspan}">${cur(BMY.reduce((a,b)=>a+b.budget,0))}</td><td class="n">—</td><td class="n">—</td></tr>`) + `</tbody>`;
 
+  renderBudgetSyncStatus();
   wireCells();
   qsa('[data-resetbudget]').forEach(b => b.addEventListener('click', () => {
     const m = S.months.find(x => x.k === b.dataset.resetbudget);
@@ -1580,6 +1585,41 @@ function setBudgetTableView(v){
 }
 if(budgetViewAllBtn) budgetViewAllBtn.addEventListener('click', () => setBudgetTableView('all'));
 if(budgetViewMonthBtn) budgetViewMonthBtn.addEventListener('click', () => setBudgetTableView('month'));
+
+/* The header's "Saved" dot only ever meant "written to this browser's
+   localStorage" — it says nothing about whether anyone else will see the
+   edit. That gap is exactly what reads as budget numbers "refreshing":
+   local storage always has the latest, but the shared workspace only gets
+   it ~2.5s after the last edit (debounced, silent on failure) unless
+   someone navigates away first. This status line and button make the
+   actually-shared save visible and give admin/team an explicit, immediate
+   way to force it rather than trusting an invisible timer. */
+function renderBudgetSyncStatus(){
+  const box = el('budgetSyncStatus'); if(!box) return;
+  if(typeof LIVESYNC === 'undefined' || !LIVESYNC.key){
+    box.className = 'hint-bar bad';
+    box.innerHTML = `Live sync isn't enabled in this browser — edits here only stay local. Turn it on from <b>Sessions → Live sync</b> so everyone sees the same budget.`;
+    return;
+  }
+  const localEdit = typeof lastLocalEditAt === 'function' ? lastLocalEditAt() : null;
+  const pushed = !!LIVESYNC.lastPush && (!localEdit || LIVESYNC.lastPush >= localEdit);
+  box.className = pushed ? 'hint-bar ok' : 'hint-bar bad';
+  box.innerHTML = pushed
+    ? `<b>Saved for everyone.</b> Last shared ${esc(new Date(LIVESYNC.lastPush).toLocaleString())} — anyone opening this workspace sees this.`
+    : `<b>Not yet saved for everyone.</b> ${LIVESYNC.lastPush ? 'Shared workspace last had ' + esc(new Date(LIVESYNC.lastPush).toLocaleString()) + ' — newer edits are still only in this browser.' : 'This browser has edits nobody else has seen yet.'} Click Save for everyone, or wait ~3s for it to push automatically.`;
+}
+const budgetSaveBtn = el('budgetSaveBtn');
+if(budgetSaveBtn) budgetSaveBtn.addEventListener('click', async () => {
+  budgetSaveBtn.disabled = true; budgetSaveBtn.textContent = 'Saving…';
+  try{
+    await liveSyncPush();
+    toast('Saved — everyone opening this workspace will see it');
+  }catch(e){
+    toast(e.message || 'Could not save centrally — check Sessions → Live sync');
+  }
+  budgetSaveBtn.disabled = false; budgetSaveBtn.textContent = 'Save for everyone';
+  renderBudgetSyncStatus();
+});
 
 function renderSplitSuggestion(){
   const box = el('splitSuggestion'); if(!box) return;
@@ -1840,72 +1880,121 @@ el('copyPrompt').addEventListener('click', () => {
     .catch(()=>toast('Select the text and copy manually'));
 });
 
-/* ═══════════ URL → SOCIAL CONTENT (KOL hub, after Research a creator) ═══════════
-   No API key or server fetch exists in this static site — same constraint
-   as the creator-research prompt above — so this follows the
-   url-to-social-content skill's manual-tool path: build one prompt that
-   makes whichever AI tool the user pastes it into do the fetch, hold to a
-   claim ceiling (nothing invented beyond the source article), and route
-   the result through d.nuvo's own message stack instead of a generic
-   brand voice. The human-review gate that skill requires becomes "review
-   the tool's output yourself before using it" — there's no way to build
-   an in-app review step without a backend, so this is the honest
-   equivalent within that constraint. */
-function buildUrlContentPrompt(url, typeKey, aspect){
-  const type = URL_CONTENT_TYPES.find(t => t.k === typeKey) || URL_CONTENT_TYPES[0];
-  const lane = DNUVO_MESSAGE_STACK.find(m => m.lane === type.lane) || DNUVO_MESSAGE_STACK[0];
+/* ═══════════ KOL/PRODUCT PROMO POST (KOL hub, after Research a creator) ═══════════
+   Earlier version of this panel let anyone paste an arbitrary URL and asked
+   an AI tool to invent an image from it — no connection to d.nuvo's actual
+   creators, products or vetted messaging, and "generate an image" implied
+   synthetic photography d.nuvo doesn't use. Rebuilt around what the app
+   already has real, vetted data for: pick an actual roster creator or SKU,
+   pick one of its PARTNERSHIP_ANGLES (data.js — already claim-checked, one
+   per SKU/lane/proof-requirement), and produce ready-to-post COPY ONLY in
+   a fixed layout. The image slot always points at a real asset (the
+   Shopify listing photo, or the creator's own posted content) — never a
+   generated one. */
+function renderPromoPicker(){
+  const srcSel = el('promoSource'), kolSel = el('promoKolPick'),
+    skuSel = el('promoProductPick'), angleSel = el('promoAngle');
+  if(!srcSel || !kolSel || !skuSel || !angleSel) return;
+  const source = srcSel.value || 'kol';
+  kolSel.hidden = source !== 'kol';
+  skuSel.hidden = source !== 'product';
+
+  const kolKeep = kolSel.value;
+  kolSel.innerHTML = S.kols.length
+    ? S.kols.map((k,i) => `<option value="${i}">${esc(k.handle)} — ${esc((k.type||'ugc')==='live'?'Livestream':'UGC')}</option>`).join('')
+    : `<option value="-1">No creators on the roster yet</option>`;
+  if(kolKeep && S.kols[+kolKeep]) kolSel.value = kolKeep;
+
+  const skuKeep = skuSel.value;
+  skuSel.innerHTML = S.skus.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  if(skuKeep && S.skus.some(s=>s.id===skuKeep)) skuSel.value = skuKeep;
+
+  let angles;
+  if(source === 'kol'){
+    const k = S.kols[+kolSel.value];
+    const type = k ? (k.type||'ugc') : null;
+    angles = type ? PARTNERSHIP_ANGLES.filter(a => a.fitCreator === type || a.fitCreator === 'either') : [];
+  } else {
+    const sku = S.skus.find(s => s.id === skuSel.value);
+    angles = sku ? PARTNERSHIP_ANGLES.filter(a => a.skuId === sku.id) : [];
+  }
+  angleSel.innerHTML = angles.length
+    ? angles.map(a => `<option value="${a.id}">${esc(a.name)} (${esc(a.type)})</option>`).join('')
+    : `<option value="">No partnership angle fits this pick yet</option>`;
+}
+
+function buildPromoPrompt(angle, sku, kolRec, aspect){
   const stack = DNUVO_MESSAGE_STACK.map(m => `- ${m.lane}: "${m.text}"`).join('\n');
-  return `Read this article/post and build ONE grounded d.nuvo social content concept from it. Do not skip the source — everything you output must trace back to it.
+  const shopUrl = sku && sku.handle ? `${S.settings.shopDomain}/products/${sku.handle}` : '';
+  const imageSource = kolRec
+    ? `${kolRec.handle}'s own posted ${(kolRec.type||'ugc')==='live' ? 'livestream clip or still' : 'UGC content'} — pull the real photo/frame from their account or the creator-content archive. Do not render, generate, or composite a new image.`
+    : (shopUrl
+      ? `The real product photo from d.nuvo's own Shopify listing: ${shopUrl}`
+      : `A real product photo of ${sku ? sku.name : 'this SKU'} from d.nuvo's asset library — no live shop URL is on file for this record yet, so pull the file directly from the library, do not generate one.`);
 
-SOURCE URL: ${url}
-CONTENT TYPE: ${type.name} — ${type.framing}
-IMAGE ASPECT RATIO: ${aspect}
+  return `Write ready-to-post COPY for a d.nuvo social promo post. This is NOT an image-generation request — d.nuvo does not use synthetic or AI-rendered photography for KOL or product posts. You are writing text only; a human drops it onto a real photo that already exists.
 
-STEP 1 — Read the source
-Fetch and read the URL above. If you cannot access it (paywalled, blocked, broken link), say so plainly and stop — do not guess the content from the URL or title alone.
+PARTNERSHIP ANGLE: ${angle.name} (${angle.type})
+SKU: ${sku ? sku.name + ' — ' + sku.role + (sku.roleNote ? ': ' + sku.roleNote : '') : 'not tied to one SKU'}
+${kolRec ? `CREATOR: ${kolRec.handle} (${(kolRec.type||'ugc')==='live' ? 'Livestream' : 'UGC'})` : 'CREATOR: not yet assigned — write in a generic d.nuvo creator voice'}
+ASPECT RATIO: ${aspect}
 
-STEP 2 — Propose ONE concept, grounded only in what you just read
-Return: a headline, a one-line angle, a visual theme, 3-4 short supporting points, and — only if the article itself states a real number or study result — one sourced stat with where in the article it came from. If nothing in the article qualifies as a stat, leave it out entirely. Do not invent, estimate, or round a number to fill this in.
+WHAT THIS ANGLE IS PROVING
+${angle.condition}
 
-STEP 3 — Redesign the messaging through d.nuvo's brand lens
-d.nuvo's four-layer message stack (use the lane below as the lead layer for this content type, the others as support, not filler):
+ON-CAMERA FORMAT (context only — you are writing the post copy, not a video script)
+${angle.format}
+
+IMAGE — real asset only, do not invent
+${imageSource}
+
+STANDARD POST LAYOUT — write copy for exactly these slots, nothing extra:
+1. HEADLINE — one line, 8 words or fewer.
+2. KEY POINTS — exactly 3 short lines (not paragraphs), each a single benefit or proof point.
+3. MAIN MESSAGE BODY — the caption, 2-4 sentences, ready to post as-is.
+4. LOGO — note only: "d.nuvo logo, standard lockup, bottom-right of the frame."
+5. CTA — one line.
+
+d.nuvo's message stack — lead with ${angle.lane}, the rest are support only, not filler:
 ${stack}
-Lead layer for ${type.name}: ${lane.lane} — "${lane.text}"
 
-d.nuvo differentiation to weave in where it genuinely fits the source material: a patented ceramide delivery system designed for absorption plus repair — not a generic moisturizer claim.
+CLAIM GUARDRAILS FOR THIS SPECIFIC ANGLE — already vetted for this SKU/creator pairing, do not soften or override:
+${angle.proof}
 
-CLAIM POLICY — this overrides anything that would otherwise sound punchier:
-- Never publish a number (percentage, "Nx deeper", days-to-result) unless it is either (a) directly stated in the source article with a citable line, or (b) already an approved d.nuvo benchmark you were given separately. If validation is pending, use non-numeric mechanism language instead — describe what the product does, not an unverified figure for how well it does it.
-- Never claim d.nuvo treats or cures a medical condition (e.g. acne, eczema). Mechanism and visible-comfort language only.
-- If the source article makes a claim you cannot verify, do not carry that claim into the d.nuvo version — drop it or rewrite it as a question/observation instead.
+GENERAL CLAIM POLICY
+- Never publish a number (percentage, "Nx deeper", days-to-result) unless it's an approved d.nuvo benchmark. If validation is pending, use non-numeric mechanism language instead — describe what it does, not an unverified figure for how well it does it.
+- Never claim d.nuvo treats or cures a medical condition. Mechanism and visible-comfort language only.
 
-STEP 4 — Build the image generation package
-From the concept above (not a generic stock idea), output:
-1. An image-generation prompt for a ${aspect} ${type.k === 'educational' || type.k === 'science' ? 'infographic-style' : 'social'} image — no logos or watermarks, no readable text baked into the image itself (captions go in the post, not the art), no "Made with AI" disclaimer caption.
-2. Alt text, trimmed to about 160 characters.
-3. A suggested filename (kebab-case, describes the content, ends in an image extension).
-4. A short list of anything you defaulted on that wasn't explicitly given to you (tone, palette, aspect ratio assumption, etc.) — so a human reviewer knows exactly what to check.
+CTA TO USE
+${angle.cta}
 
-Label the whole output "PENDING REVIEW — not yet approved." This concept has not been reviewed by a human yet; do not treat it as final or publish-ready.`;
+Label the output "PENDING REVIEW — not yet approved." A human confirms the real photo, checks the claim guardrails above, and assembles the final post before anything publishes.`;
 }
 
-const ugcTypeSel = el('ugcType');
-if(ugcTypeSel && !ugcTypeSel.options.length){
-  ugcTypeSel.innerHTML = URL_CONTENT_TYPES.map(t => `<option value="${t.k}">${esc(t.name)}</option>`).join('');
-}
+const promoSourceSel = el('promoSource');
+if(promoSourceSel) promoSourceSel.addEventListener('change', renderPromoPicker);
+const promoKolPickSel = el('promoKolPick');
+if(promoKolPickSel) promoKolPickSel.addEventListener('change', renderPromoPicker);
+const promoProductPickSel = el('promoProductPick');
+if(promoProductPickSel) promoProductPickSel.addEventListener('change', renderPromoPicker);
 
-const genUrlPromptBtn = el('genUrlPrompt');
-if(genUrlPromptBtn) genUrlPromptBtn.addEventListener('click', () => {
-  const url = el('ugcUrl').value.trim();
-  if(!url){ toast('Paste an article or post URL first'); el('ugcUrl').focus(); return; }
-  el('urlPromptText').textContent = buildUrlContentPrompt(url, el('ugcType').value, el('ugcAspect').value);
-  el('urlPromptOut').hidden = false;
-  el('urlPromptOut').scrollIntoView({behavior:'smooth', block:'nearest'});
+const genPromoPromptBtn = el('genPromoPrompt');
+if(genPromoPromptBtn) genPromoPromptBtn.addEventListener('click', () => {
+  const source = el('promoSource').value;
+  const angleId = el('promoAngle').value;
+  const angle = PARTNERSHIP_ANGLES.find(a => a.id === angleId);
+  if(!angle){ toast('Pick a creator or product that has a partnership angle first'); return; }
+  const kolRec = source === 'kol' ? S.kols[+el('promoKolPick').value] : null;
+  const sku = S.skus.find(s => s.id === angle.skuId) || null;
+  if(source === 'kol' && !kolRec){ toast('Pick a creator first'); return; }
+  el('promoPromptText').textContent = buildPromoPrompt(angle, sku, kolRec, el('promoAspect').value);
+  el('promoPromptOut').hidden = false;
+  el('promoPromptOut').scrollIntoView({behavior:'smooth', block:'nearest'});
 });
-const copyUrlPromptBtn = el('copyUrlPrompt');
-if(copyUrlPromptBtn) copyUrlPromptBtn.addEventListener('click', () => {
-  navigator.clipboard.writeText(el('urlPromptText').textContent)
-    .then(()=>toast('Prompt copied — paste it into the tool'))
+const copyPromoPromptBtn = el('copyPromoPrompt');
+if(copyPromoPromptBtn) copyPromoPromptBtn.addEventListener('click', () => {
+  navigator.clipboard.writeText(el('promoPromptText').textContent)
+    .then(()=>toast('Copied — paste it into the tool'))
     .catch(()=>toast('Select the text and copy manually'));
 });
 
