@@ -464,9 +464,19 @@ function sectionRows(sec){
       return [head, ...rows];
     }
     case 'calendar': {
-      const head = ['Month','Media','Creators','Activity','Promotion','Units','Budget'];
-      const rows = MONTHS.map((m,i)=>[m.label,m.media,m.kolWork,m.events,m.promo,
-        B[i].units, c+Math.round(B[i].budget)]);
+      const head = ['Month','Media spend','KOL Live','Content (UGC)','Events','Promotion','Units'];
+      const rows = MONTHS.map((m,i) => {
+        const range = (typeof monthDateRange === 'function') ? monthDateRange(i) : null;
+        const inRange = d => !!d && range && d >= range.start && d < range.end;
+        const live = (S.schedule||[]).filter(e => e.type==='live' && inRange(e.date));
+        const ugc = (S.schedule||[]).filter(e => e.type==='ugc' && inRange(e.date));
+        const events = (S.events||[]).filter(e => inRange(e.date));
+        const entry = Object.entries(S.settings.promoPeriods||{}).find(([k,cfg]) => cfg.active && cfg.month === m.k);
+        const promoName = entry ? ((PROMO_PERIODS.find(x=>x.k===entry[0])||{}).name || entry[0]) : '';
+        return [m.label, c+Math.round(B[i].budget),
+          live.map(e=>e.kol).join('; '), ugc.map(e=>e.kol).join('; '), events.map(e=>e.name).join('; '),
+          promoName, B[i].units];
+      });
       return [head, ...rows];
     }
     case 'events': {

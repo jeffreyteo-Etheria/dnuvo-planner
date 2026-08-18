@@ -312,6 +312,17 @@
         <div class="chan3" id="chanLogic"></div>
       </div>
 
+      <div class="row2">
+        <div class="panel">
+          <div class="p-h"><h3>Platform commission rates</h3><span class="p-note">edit to match your storefronts</span></div>
+          <div id="platformFeesBox"></div>
+        </div>
+        <div class="panel">
+          <div class="p-h"><h3>Add / import SKUs</h3></div>
+          <div id="addSkuBox"></div>
+        </div>
+      </div>
+
       <div class="panel">
         <div class="p-h">
           <h3>SKU price book</h3>
@@ -320,6 +331,18 @@
         <div class="tb-wrap"><table class="tb" id="skuTable"></table></div>
         <div id="marginTargetBox"></div>
         <div class="hint-bar" id="floorHint"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>SKU floor &amp; max safe discount by channel</h3>
+          <span class="p-note">the same floor logic as above, checked against all four channels at once — not just the Shopify-lead reference</span></div>
+        <div id="skuFloorMatrix"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Live &amp; creator-shop affiliate — stacked commission</h3>
+          <span class="p-note">the floor once a KOL commission is added on top of the base platform's own cut</span></div>
+        <div id="liveAffiliateFloor"></div>
       </div>
 
       <div class="panel">
@@ -822,7 +845,8 @@
       </div>
 
       <div class="panel">
-        <div class="p-h"><h3>Activity calendar</h3><span class="p-note">book 4–6 weeks ahead</span></div>
+        <div class="p-h"><h3>Activity calendar</h3><span class="p-note">book 4–6 weeks ahead — add as many occurrences as actually happen, e.g. every Live shopping session</span>
+          <button class="btn-solid sm" id="addEvent">Add event</button></div>
         <div class="tb-wrap"><table class="tb" id="eventTable"></table></div>
       </div>
     </section>
@@ -834,7 +858,7 @@
         <div id="promoCalendar"></div>
       </div>
       <div class="panel">
-        <div class="p-h"><h3>Six-month plan</h3></div>
+        <div class="p-h"><h3>Six-month overview</h3><span class="p-note">media spend, KOL Live, UGC content and events lined up per month — all real logged activity, not the plan narrative</span></div>
         <div class="tb-wrap"><table class="tb" id="calTable"></table></div>
       </div>
       <div class="panel">

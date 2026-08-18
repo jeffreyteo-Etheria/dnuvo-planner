@@ -57,6 +57,24 @@ function normalizeState(obj){
   s.kolListTombstones = s.kolListTombstones || [];
   s.sendLog  = s.sendLog  || [];
   s.eventStatus = s.eventStatus || {};
+  /* Migrated once from the old fixed 5-row table (EVENTS + eventStatus,
+     status/date only, no way to add a row) into a real appendable list —
+     "Live shopping" is monthly from M3, so one row could never hold more
+     than one occurrence's status and date. Existing admin-entered
+     status/date is carried over; nothing new is invented — url/notes
+     start blank on the migrated rows. */
+  if(!s.events){
+    s.events = EVENTS.map((e,i) => {
+      const st = s.eventStatus[i] || {};
+      return {
+        id: 'EV'+i+'-'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
+        name:e.name, when:e.when, budget:e.budget, purpose:e.goal, how:e.how, owner:e.owner,
+        date: st.date || '', status: st.status || 'Not started', url:'', notes:'',
+        updatedAt: new Date().toISOString()
+      };
+    });
+  }
+  s.eventTombstones = s.eventTombstones || [];
   s.expansion = s.expansion || {};
   s.expansion.checklist = s.expansion.checklist || {};
   s.expansion.distributors = s.expansion.distributors || [];
@@ -170,8 +188,8 @@ function floorOf(sku, platformKey, extraCommissionPct){
   }
   return (4 * sku.cogs + (sku.shipping||0) + (sku.handling||0)) / (1 - fee);
 }
-function maxDiscount(sku, platformKey){
-  const f = floorOf(sku, platformKey);
+function maxDiscount(sku, platformKey, extraCommissionPct){
+  const f = floorOf(sku, platformKey, extraCommissionPct);
   if(!sku.sale || sku.sale <= f) return 0;
   return Math.floor((1 - f / sku.sale) * 100);
 }
@@ -264,6 +282,12 @@ function go(v){
   el('viewTitle').textContent = m[0];
   el('viewSub').textContent = m[1];
   el('scroll').scrollTop = 0;
+  // go() only ever toggled visibility — fine while every view's content
+  // only changed via its own edits, but the 6-month overview now pulls
+  // from Events, KOL schedule and Campaign setup, none of which know to
+  // push a refresh here. Recompute on arrival instead of chasing every
+  // upstream save() call across three files.
+  if(v === 'calendar' && typeof renderCalendar === 'function') renderCalendar();
 }
 qsa('.nav-i').forEach(b => b.addEventListener('click', () => go(b.dataset.view)));
 el('printBtn').addEventListener('click', () => window.print());
@@ -1123,6 +1147,158 @@ function renderMarginTargetBox(){
   });
 }
 
+/* ── Platform commission rates — admin sets these to match the real
+   storefront take-rate; every floor/max-discount figure in Pricing
+   derives from S.settings.platformFees via feeFor()/floorOf(), so one
+   edit here ripples through the whole tab. Defaults are whatever
+   PLATFORM_FEES (data.js) already shipped with — not silently swapped
+   for a different set of numbers; admin confirms the real rate. ── */
+function renderPlatformFeesBox(){
+  const box = el('platformFeesBox'); if(!box) return;
+  const admin = isAdmin();
+  box.innerHTML = `<div class="fgrid">${SHOPFRONT_PLATFORMS.map(p => {
+    const pct = Math.round(feeFor(p.k) * 1000) / 10;
+    return `<label>${esc(p.name)} %${admin
+      ? `<input type="number" step="0.1" min="0" max="60" data-pfkey="${p.k}" value="${pct}">`
+      : `<p class="fh" style="margin-top:6px">${pct}%</p>`}</label>`;
+  }).join('')}</div>
+  <p class="fh" style="margin-top:10px">Floor price = (COGS × 4 + shipping + handling) ÷ (1 − platform commission), or the % net-margin
+    formula if that mode is selected below. These are the marketplace's own cut only — LIVE/affiliate KOL commission stacks on top,
+    see the section further down.</p>`;
+  qsa('[data-pfkey]', box).forEach(inp => inp.addEventListener('change', () => {
+    S.settings.platformFees = S.settings.platformFees || {};
+    S.settings.platformFees[inp.dataset.pfkey] = num(inp.value) / 100;
+    save(); renderPricing();
+  }));
+}
+
+/* ── Add a new SKU row directly — the price book used to only ever hold
+   the 6 SKUs seeded from data.js, with no way to add a real 7th product
+   without editing source. Starts blank/zero rather than guessing a
+   price, spec or role. ── */
+function renderAddSkuBox(){
+  const box = el('addSkuBox'); if(!box) return;
+  if(!isAdmin()){ box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="fgrid">
+      <label>SKU name<input id="newSkuName" placeholder="e.g. Vitamin C Serum"></label>
+      <label>SRP (${esc(S.settings.cur)})<input id="newSkuMsrp" type="number" min="0" step="0.01"></label>
+      <label>COGS (${esc(S.settings.cur)})<input id="newSkuCogs" type="number" min="0" step="0.01"></label>
+    </div>
+    <button class="btn-line sm" id="addSkuBtn" style="margin-top:10px">+ Add SKU row</button>`;
+  el('addSkuBtn').addEventListener('click', () => {
+    const name = el('newSkuName').value.trim();
+    if(!name){ toast('Name the SKU first'); return; }
+    const msrp = num(el('newSkuMsrp').value), cogs = num(el('newSkuCogs').value);
+    S.skus.push({
+      id: 'sku'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
+      name, spec:'', tier:'Core', msrp, sale: msrp, cogs, shipping:0, handling:0, units:0,
+      handle:'', url:'', urlOk:null, role:'Unclassified', roleNote:''
+    });
+    save(); renderPricing();
+    toast(name + ' added to the price book');
+  });
+}
+
+/* ── Per-channel floor & max safe discount matrix — the existing SKU
+   price book above only ever showed one floor (Shopify-referenced); this
+   shows all four so a promo can be checked against the actual channel it
+   will run on, not just the lead price. Flags are computed live from the
+   real floor/discount numbers below them, never hardcoded per SKU. ── */
+function renderSkuFloorMatrix(){
+  const box = el('skuFloorMatrix'); if(!box) return;
+  const admin = isAdmin();
+  const rows = S.skus.map(s => {
+    const perChan = SHOPFRONT_PLATFORMS.map(p => ({ p, floor: floorOf(s, p.k), max: maxDiscount(s, p.k) }));
+    const belowFloor = perChan.filter(c => s.sale <= c.floor);
+    const minC = perChan.reduce((a,b) => b.max < a.max ? b : a);
+    const maxC = perChan.reduce((a,b) => b.max > a.max ? b : a);
+    let flag = null;
+    if(belowFloor.length){
+      flag = { tone:'bad', text:`SRP may sit at or below the floor on ${belowFloor.map(c=>c.p.name).join(', ')} — check before discounting at all.` };
+    } else if(minC.max < 10){
+      flag = { tone:'warn', text:`SRP is close to floor on ${minC.p.name} (only ${minC.max}% headroom). Consider raising SRP before running any flash promo on this SKU.` };
+    } else if(maxC.max - minC.max >= 15){
+      flag = { tone:'warn', text:`${minC.p.name} flash headroom is thin — cap ${minC.p.name} discount at ${minC.max}% even though other channels can go deeper.` };
+    }
+    const bundles = BUNDLES.filter(b => b.parts.includes(s.id));
+    return { s, perChan, flag, bundles };
+  });
+
+  const colCount = 3 + (admin?1:0) + SHOPFRONT_PLATFORMS.length;
+  const head = `<th>SKU</th><th class="n">SRP</th>${admin?'<th class="n">COGS</th>':''}` +
+    SHOPFRONT_PLATFORMS.map(p => `<th>${esc(p.name)} floor / max off</th>`).join('') + '<th></th>';
+
+  box.innerHTML = `<div class="tb-wrap"><table class="tb"><thead><tr>${head}</tr></thead><tbody>` +
+    rows.map(({s,perChan,flag,bundles}) => {
+      const del = admin ? `<button class="btn-line sm danger" data-skudel="${s.id}">×</button>` : '';
+      const row = `<tr>
+        <td><b>${esc(s.name)}</b>${bundles.length?`<span class="sub">in ${bundles.map(b=>esc(b.name)+' ('+cur(bundleView(b).price)+')').join(', ')}</span>`:''}</td>
+        <td class="n">${cur(s.sale)}</td>
+        ${admin?`<td class="n">${cur(s.cogs)}</td>`:''}
+        ${perChan.map(c => `<td class="n">${cur(c.floor)}<span class="pill ${c.max>=20?'p-g':c.max>=10?'p-a':'p-r'}" style="display:block;margin-top:4px;width:fit-content">${c.max}% max</span></td>`).join('')}
+        <td>${del}</td></tr>`;
+      const flagRow = flag ? `<tr class="dup-note${flag.tone==='bad'?' bad':''}"><td colspan="${colCount}">🚩 ${esc(flag.text)}</td></tr>` : '';
+      return row + flagRow;
+    }).join('') + `</tbody></table></div>`;
+
+  qsa('[data-skudel]', box).forEach(b => b.addEventListener('click', () => {
+    if(!isAdmin()) return;
+    S.skus = S.skus.filter(x => x.id !== b.dataset.skudel);
+    save(); renderPricing();
+    toast('SKU removed from the price book');
+  }));
+}
+
+/* ── Live-selling and non-live affiliate-shop KOL commission stack on
+   top of the base platform's own commission — both come out of the same
+   sale, so the real floor sits higher than the base channel floor above.
+   Reuses floorOf()/maxDiscount()'s existing extraCommissionPct param
+   rather than a new formula. Defaults to 0% until admin sets a real
+   rate, except the live-selling default (25%) which mirrors what's
+   actually logged against real creators elsewhere in this app (e.g. the
+   Shopee Live sessions in KOL hub) — not an invented industry figure. ── */
+function renderLiveAffiliateFloor(){
+  const box = el('liveAffiliateFloor'); if(!box) return;
+  const admin = isAdmin();
+  if(S.settings.liveKolCommissionPct == null) S.settings.liveKolCommissionPct = 25;
+  if(S.settings.affiliateKolCommissionPct == null) S.settings.affiliateKolCommissionPct = 0;
+  S.settings.liveBasePlatform = S.settings.liveBasePlatform || 'tiktok';
+  const liveP = S.settings.liveKolCommissionPct, affP = S.settings.affiliateKolCommissionPct;
+  const basePlat = SHOPFRONT_PLATFORMS.find(p=>p.k===S.settings.liveBasePlatform) || SHOPFRONT_PLATFORMS[0];
+  const baseFeePct = feeFor(basePlat.k) * 100;
+
+  const cellFor = (floor, max, sale) => sale <= floor
+    ? `<span class="pill p-r">${cur(floor)} · at/below floor</span>`
+    : `${cur(floor)} <span class="pill ${max>=20?'p-g':max>=10?'p-a':'p-r'}">${max}% max</span>`;
+
+  box.innerHTML = `<p class="fh">These two mechanics add a brand-set KOL commission <b>on top of</b> the platform commission above —
+    both are deducted from the same sale, so the real floor is higher than the base channel floor. Each campaign sets its own rate
+    here (defaults to 0% until set).</p>
+    <div class="fgrid">
+      <label>Live-selling KOL commission %${admin?`<input type="number" min="0" max="60" id="liveCommIn" value="${liveP}">`:`<p class="fh" style="margin-top:6px">${liveP}%</p>`}</label>
+      <label>Non-live affiliate-shop KOL commission %${admin?`<input type="number" min="0" max="60" id="affCommIn" value="${affP}">`:`<p class="fh" style="margin-top:6px">${affP}%</p>`}</label>
+      <label>Live base platform${admin?`<select id="liveBaseSel">${SHOPFRONT_PLATFORMS.map(p=>`<option value="${p.k}"${p.k===basePlat.k?' selected':''}>${esc(p.name)} commission</option>`).join('')}</select>`:`<p class="fh" style="margin-top:6px">${esc(basePlat.name)} commission</p>`}</label>
+    </div>
+    <div class="tb-wrap" style="margin-top:12px"><table class="tb">
+      <thead><tr><th>SKU</th><th class="n">Live-selling floor (${(baseFeePct+liveP).toFixed(1)}% combined)</th>
+        <th class="n">Non-live affiliate-shop floor (${(baseFeePct+affP).toFixed(1)}% combined)</th></tr></thead>
+      <tbody>${S.skus.map(s => {
+        const liveFloor = floorOf(s, basePlat.k, liveP), affFloor = floorOf(s, basePlat.k, affP);
+        const liveMax = maxDiscount(s, basePlat.k, liveP), affMax = maxDiscount(s, basePlat.k, affP);
+        return `<tr><td><b>${esc(s.name)}</b></td>
+          <td class="n">${cellFor(liveFloor, liveMax, s.sale)}</td>
+          <td class="n">${cellFor(affFloor, affMax, s.sale)}</td></tr>`;
+      }).join('')}</tbody>
+    </table></div>`;
+
+  const liveIn = el('liveCommIn');
+  if(liveIn) liveIn.addEventListener('change', () => { S.settings.liveKolCommissionPct = num(liveIn.value); save(); renderPricing(); });
+  const affIn = el('affCommIn');
+  if(affIn) affIn.addEventListener('change', () => { S.settings.affiliateKolCommissionPct = num(affIn.value); save(); renderPricing(); });
+  const baseSel = el('liveBaseSel');
+  if(baseSel) baseSel.addEventListener('change', () => { S.settings.liveBasePlatform = baseSel.value; save(); renderPricing(); });
+}
+
 function renderPricing(){
   el('tierBox').innerHTML = TIERS.map(t =>
     `<div class="tier ${t.k}"><div class="tier-n">${esc(t.name)}</div>
@@ -1173,6 +1349,10 @@ function renderPricing(){
     : `<b>Floor is already calculated.</b> Starting from the listed price, it nets out the planned discount, this platform's take-rate, any livestream/affiliate commission, shipping and product cost — what's left after that is protected as profit. Keep every promotion above the number shown. If a planned discount breaks it, use the simulator below and request a change — an administrator will review it.`;
 
   renderKeySellFocus();
+  renderPlatformFeesBox();
+  renderAddSkuBox();
+  renderSkuFloorMatrix();
+  renderLiveAffiliateFloor();
 
   el('bundleTable').innerHTML = `<thead><tr><th>Bundle</th><th>Contents</th><th>Tier</th>
       <th class="n">Price</th><th class="n">Sum of parts</th><th class="n">Saving</th><th>Where it is used</th></tr></thead><tbody>` +
@@ -2528,32 +2708,97 @@ function renderEvents(){
       </tr>`).join('') + `</tbody>`;
   }
 
-  S.eventStatus = S.eventStatus || {};
-  const evStatusOpts = ['Not started','Planned','Done'];
+  renderEventTable();
+}
+
+const evStatusOpts = ['Not started','Planned','Done'];
+
+function renderEventTable(){
+  const admin = isAdmin();
   el('eventTable').innerHTML = `<thead><tr><th>Activity</th><th>When</th><th class="n">Budget</th>
-      <th>Purpose</th><th>How it runs</th><th>Owner</th><th>Status</th><th>Actual date</th></tr></thead><tbody>` +
-    EVENTS.map((e,i) => {
-      const st = S.eventStatus[i] || {};
-      return `<tr><td><b>${esc(e.name)}</b></td><td class="n">${esc(e.when)}</td>
-      <td class="n">${esc(e.budget)}</td><td>${esc(e.goal)}</td>
-      <td style="max-width:340px">${esc(e.how)}</td><td>${esc(e.owner)}</td>
-      <td><select class="ev-status" data-evi="${i}">${evStatusOpts.map(o=>
-        `<option${(st.status||'Not started')===o?' selected':''}>${o}</option>`).join('')}</select></td>
-      <td><input type="date" class="ev-date" data-evi="${i}" value="${esc(st.date||'')}"></td></tr>`;
-    }).join('') + `</tbody>`;
+      <th>Purpose</th><th>How it runs</th><th>Owner</th><th>Status</th><th>Date</th><th>Event URL</th><th></th></tr></thead><tbody>` +
+    (S.events||[]).map(e => `<tr>
+      <td><b>${esc(e.name)}</b></td><td class="n">${esc(e.when||'')}</td>
+      <td class="n">${esc(e.budget||'')}</td><td>${esc(e.purpose||'')}</td>
+      <td style="max-width:340px">${esc(e.how||'')}</td>
+      <td><span class="ed" contenteditable="true" data-evfield="${e.id}|owner">${esc(e.owner||'')}</span></td>
+      <td><select class="ev-status" data-evi="${e.id}">${evStatusOpts.map(o=>
+        `<option${(e.status||'Not started')===o?' selected':''}>${o}</option>`).join('')}</select></td>
+      <td><input type="date" class="ev-date" data-evi="${e.id}" value="${esc(e.date||'')}"></td>
+      <td>${e.url
+        ? `<a href="${esc(/^https?:\/\//.test(e.url)?e.url:'https://'+e.url)}" target="_blank" rel="noopener" class="k-handle-link">Open</a> <span class="ed" contenteditable="true" data-evfield="${e.id}|url" style="display:none">${esc(e.url)}</span> <button class="btn-line sm" data-evediturl="${e.id}">Edit</button>`
+        : `<span class="ed" contenteditable="true" data-evfield="${e.id}|url" title="paste event link">${esc(e.url||'')}</span>`}</td>
+      <td>${admin?`<button class="btn-line sm danger" data-evdel="${e.id}">Delete</button>`:''}</td></tr>`).join('')
+    + `</tbody>`;
+
   qsa('.ev-status').forEach(s => s.addEventListener('change', () => {
-    const i = s.dataset.evi;
-    S.eventStatus[i] = S.eventStatus[i] || {};
-    S.eventStatus[i].status = s.value;
-    save();
+    const e = (S.events||[]).find(x=>x.id===s.dataset.evi);
+    if(e){ e.status = s.value; e.updatedAt = new Date().toISOString(); save(); }
   }));
   qsa('.ev-date').forEach(d => d.addEventListener('change', () => {
-    const i = d.dataset.evi;
-    S.eventStatus[i] = S.eventStatus[i] || {};
-    S.eventStatus[i].date = d.value;
-    save();
+    const e = (S.events||[]).find(x=>x.id===d.dataset.evi);
+    if(e){ e.date = d.value; e.updatedAt = new Date().toISOString(); save(); }
+  }));
+  qsa('[data-evfield]', el('eventTable')).forEach(c => c.addEventListener('blur', () => {
+    const [id, field] = c.dataset.evfield.split('|');
+    const e = (S.events||[]).find(x=>x.id===id);
+    if(!e) return;
+    const next = c.textContent.trim();
+    if(e[field] === next) return;
+    e[field] = next; e.updatedAt = new Date().toISOString(); save(); renderEventTable();
+  }));
+  qsa('[data-evediturl]').forEach(b => b.addEventListener('click', () => {
+    const row = b.closest('tr');
+    row.querySelector('a').style.display = 'none';
+    row.querySelector('[data-evfield$="|url"]').style.display = '';
+    row.querySelector('[data-evfield$="|url"]').focus();
+    b.style.display = 'none';
+  }));
+  qsa('[data-evdel]').forEach(b => b.addEventListener('click', () => {
+    if(!isAdmin()) return;
+    const id = b.dataset.evdel;
+    S.eventTombstones = S.eventTombstones || [];
+    S.eventTombstones.push({ id, at:new Date().toISOString() });
+    S.events = (S.events||[]).filter(x=>x.id!==id);
+    save(); renderEventTable();
+    toast('Event removed');
   }));
 }
+
+function eventForm(){
+  modal('Add event', `
+    <div class="mf"><label>Activity name</label><input id="evName" placeholder="e.g. Live shopping — September"></div>
+    <div class="mf2">
+      <div class="mf"><label>When (plan reference)</label><input id="evWhen" placeholder="e.g. M3 · Week 2"></div>
+      <div class="mf"><label>Budget</label><input id="evBudget" placeholder="e.g. S$300–600"></div>
+    </div>
+    <div class="mf"><label>Purpose</label><input id="evPurpose" placeholder="what this session is for"></div>
+    <div class="mf"><label>How it runs</label><textarea id="evHow" rows="2" placeholder="format, mechanic, who does what"></textarea></div>
+    <div class="mf2">
+      <div class="mf"><label>Owner</label><input id="evOwner" placeholder="e.g. Brand + creator"></div>
+      <div class="mf"><label>Date</label><input id="evDate" type="date"></div>
+    </div>
+    <div class="mf"><label>Event URL</label><input id="evUrl" placeholder="ticket page, stream link, listing — optional"></div>`,
+    [['Cancel','x'],['Add','ok']], a => {
+      if(a !== 'ok') return true;
+      const name = el('evName').value.trim();
+      if(!name){ toast('Name the activity first'); return false; }
+      S.events = S.events || [];
+      S.events.push({
+        id: 'EV'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
+        name, when: el('evWhen').value.trim(), budget: el('evBudget').value.trim(),
+        purpose: el('evPurpose').value.trim(), how: el('evHow').value.trim(),
+        owner: el('evOwner').value.trim(), date: el('evDate').value, url: el('evUrl').value.trim(),
+        status: el('evDate').value ? 'Planned' : 'Not started', notes:'',
+        updatedAt: new Date().toISOString()
+      });
+      save(); renderEventTable();
+      toast('Event added');
+      return true;
+    });
+}
+const addEventBtn = el('addEvent');
+if(addEventBtn) addEventBtn.addEventListener('click', eventForm);
 
 function renderCalendar(){
   const B = computeBudget();
@@ -2574,13 +2819,49 @@ function renderCalendar(){
       : `<p class="empty">No promo periods marked active yet — set them in Campaign setup, at the top of the Strategy view.</p>`;
   }
 
-  el('calTable').innerHTML = `<thead><tr><th>Month</th><th>Media</th><th>Creators</th>
-      <th>Activity</th><th>Promotion</th><th class="n">Units</th><th class="n">Budget</th></tr></thead><tbody>` +
-    MONTHS.map((m,i) => `<tr><td><b>${esc(m.label)}</b></td><td>${esc(m.media)}</td>
-      <td>${esc(m.kolWork)}</td><td>${esc(m.events)}</td><td>${esc(m.promo)}</td>
-      <td class="n">${B[i].units}</td><td class="n">${cur(B[i].budget)}</td></tr>`).join('') +
-    `<tr class="tot"><td colspan="5">Total</td><td class="n">${B.reduce((a,b)=>a+b.units,0).toLocaleString()}</td>
-      <td class="n">${cur(B.reduce((a,b)=>a+b.budget,0))}</td></tr></tbody>`;
+  /* One overview row per month: real logged activity, not just the
+     authored plan narrative — media spend from computeBudget(), KOL
+     Live/UGC from S.schedule (bucketed by monthDateRange, kol.js),
+     brand Events from S.events, and the actual promo tag from Campaign
+     setup rather than the static plan copy. The authored plan line
+     stays as a faint sub-note so the "what was supposed to happen" isn't
+     lost next to "what's actually logged". */
+  const monthActivity = i => {
+    const range = (typeof monthDateRange === 'function') ? monthDateRange(i) : null;
+    if(!range) return { live:[], ugc:[], events:[] };
+    const inRange = d => !!d && d >= range.start && d < range.end;
+    return {
+      live: (S.schedule||[]).filter(e => e.type==='live' && inRange(e.date)),
+      ugc: (S.schedule||[]).filter(e => e.type==='ugc' && inRange(e.date)),
+      events: (S.events||[]).filter(e => inRange(e.date))
+    };
+  };
+  const listCell = (items, nameFn) => {
+    if(!items.length) return '<span class="nv">none logged</span>';
+    const names = items.slice(0,3).map(nameFn).join(', ');
+    return `<b>${items.length}</b> <span class="sub">${esc(names)}${items.length>3?'…':''}</span>`;
+  };
+  const promoForMonth = m => {
+    const entry = Object.entries(S.settings.promoPeriods||{}).find(([k,cfg]) => cfg.active && cfg.month === m.k);
+    if(!entry) return '<span class="nv">none tagged</span>';
+    const p = PROMO_PERIODS.find(x=>x.k===entry[0]);
+    return esc(p ? p.name : entry[0]);
+  };
+
+  el('calTable').innerHTML = `<thead><tr><th>Month</th><th class="n">Media spend</th><th>KOL Live</th>
+      <th>Content (UGC)</th><th>Events</th><th>Promotion</th><th class="n">Units</th></tr></thead><tbody>` +
+    MONTHS.map((m,i) => {
+      const a = monthActivity(i);
+      return `<tr><td><b>${esc(m.label)}</b><span class="sub">${esc(m.media)}</span></td>
+      <td class="n">${cur(B[i].budget)}</td>
+      <td>${listCell(a.live, e=>e.kol)}</td>
+      <td>${listCell(a.ugc, e=>e.kol)}</td>
+      <td>${listCell(a.events, e=>e.name)}</td>
+      <td>${promoForMonth(m)}</td>
+      <td class="n">${B[i].units}</td></tr>`;
+    }).join('') +
+    `<tr class="tot"><td>Total</td><td class="n">${cur(B.reduce((a,b)=>a+b.budget,0))}</td>
+      <td colspan="3"></td><td></td><td class="n">${B.reduce((a,b)=>a+b.units,0).toLocaleString()}</td></tr></tbody>`;
 
   el('weekBox').innerHTML = WEEKS.map((w,wi) =>
     `<div class="wk"><div class="wk-h"><b>${esc(w.n)} — ${esc(w.t)}</b><span>${esc(w.owner)}</span></div>
