@@ -484,21 +484,15 @@ function renderOverview(){
 function renderCampaignSetup(){
   const box = el('campaignSetup');
   if(!box || !isAdmin()) return;
-  S.settings.socialHandles = S.settings.socialHandles || {};
-  S.settings.platformsActive = S.settings.platformsActive || {};
   S.settings.promoPeriods = S.settings.promoPeriods || {};
   S.settings.competitorUrls = S.settings.competitorUrls || [];
 
   const heroSkus = S.skus.filter(s => s.role === 'Hero');
-  const platformList = [['tiktok','TikTok'],['instagram','Instagram'],['facebook','Facebook'],
-    ['shopee','Shopee'],['lazada','Lazada'],['shopify','Shopify']];
 
   box.innerHTML = `
     <div class="fgrid">
       <label>Brand URL<input data-cs="shopDomain" value="${esc(S.settings.shopDomain)}"></label>
       <label>Location focus<input data-cs="market" value="${esc(S.settings.market)}"></label>
-      <label>Shopee handle<input data-csh="shopee" value="${esc(S.settings.socialHandles.shopee||'')}"></label>
-      <label>TikTok handle<input data-csh="tiktok" value="${esc(S.settings.socialHandles.tiktok||'')}"></label>
       <label>M1 start month<input data-cs="startMonth" value="${esc(S.settings.startMonth)}" placeholder="e.g. July 2026"></label>
     </div>
 
@@ -515,14 +509,10 @@ function renderCampaignSetup(){
     </div>
 
     <div class="mf">
-      <label>Platforms to activate</label>
-      <div class="check-grid">${platformList.map(([k,name]) => `
-        <label class="${S.settings.platformsActive[k]?'on':''}">
-          <input type="checkbox" data-csp="${k}" ${S.settings.platformsActive[k]?'checked':''}>${esc(name)}</label>`).join('')}</div>
-    </div>
-
-    <div class="mf">
       <label>Promotional periods in range</label>
+      <p class="fh">→ affects Media plan's channel-allocation suggestion, the 6-month calendar's promo panel, Brand pulse's
+        competitor takeaways, and AI Strategy's monthly table — checking a period and assigning it a month changes what
+        all four of those show, not just this list.</p>
       <div class="check-grid">${PROMO_PERIODS.map(p => {
         const cfg = S.settings.promoPeriods[p.k] || { active:false, month:'M1' };
         return `<label class="${cfg.active?'on':''}">
@@ -536,17 +526,11 @@ function renderCampaignSetup(){
   qsa('[data-cs]', box).forEach(i => i.addEventListener('change', () => {
     S.settings[i.dataset.cs] = i.value.trim(); save(); renderAll();
   }));
-  qsa('[data-csh]', box).forEach(i => i.addEventListener('change', () => {
-    S.settings.socialHandles[i.dataset.csh] = i.value.trim(); save(); renderAll();
-  }));
   const compUrls = el('csCompUrls');
   if(compUrls) compUrls.addEventListener('change', () => {
     S.settings.competitorUrls = compUrls.value.split('\n').map(s=>s.trim()).filter(Boolean);
     save(); renderAll();
   });
-  qsa('[data-csp]', box).forEach(c => c.addEventListener('change', () => {
-    S.settings.platformsActive[c.dataset.csp] = c.checked; save(); renderCampaignSetup();
-  }));
   qsa('[data-csr]', box).forEach(c => c.addEventListener('change', () => {
     const k = c.dataset.csr;
     const prev = S.settings.promoPeriods[k] || { month:'M1' };
