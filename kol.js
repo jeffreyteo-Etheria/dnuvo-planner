@@ -255,11 +255,18 @@ function profileUrl(k){
 function looksLikeFollowerCount(handle){
   return /^[\d,.]+[kKmM]?$/.test(String(handle || '').replace(/^@+/, '').trim());
 }
+/* Mirrors the reference workflow's own gated sequence (sourcing → content →
+   budget → calendar → actuals) condensed to 5 steps: budget/spend gets its
+   own stage ahead of scheduling — instead of buried inside KPI or repeated
+   as a mini-summary on Schedule — and Confirmation foregrounds the weekly
+   audit's confirmed→completed tracking rather than mixing it with fee/GPM
+   benchmarking. */
 const KOL_STAGE_TABS = [
-  { k:'creators', name:'Creators', desc:'Source, verify, select' },
-  { k:'content',  name:'Content',  desc:'Brief and coordinate' },
-  { k:'post',     name:'Post',     desc:'Schedule and deliver' },
-  { k:'kpi',      name:'KPI',      desc:'Benchmark vs actual' }
+  { k:'creators', name:'Creators',      desc:'Source, verify, select' },
+  { k:'content',  name:'Content',       desc:'Brief and coordinate' },
+  { k:'budget',   name:'Budget & spend', desc:'Plan the pool, commit named spend' },
+  { k:'schedule', name:'Schedule',      desc:'Book and deliver' },
+  { k:'confirm',  name:'Confirmation',  desc:'Weekly audit — confirm what shipped' }
 ];
 
 /* ── evaluation ── */
@@ -411,30 +418,10 @@ function renderKol(){
   renderKolBudgetDrilldown();
   renderLongTailPlan();
   renderCrm();
-  renderKolActivityTopline();
   renderKolSchedule();
   renderKolScheduleBoard();
   renderKolScheduleCalendar();
   if(typeof refreshSortable === 'function'){ refreshSortable(); injectPanelExports(); }
-}
-
-/* Budget → Committed → Spend for the month currently focused in the Media
-   plan tab (S.mediaFocus) — sits above the activity list so a planner can
-   see KOL spend health without leaving the Post stage to cross-reference
-   the KPI stage's budget drilldown or payments panels. */
-function renderKolActivityTopline(){
-  const box = el('kolActivityTopline'); if(!box) return;
-  const i = Number.isInteger(S.mediaFocus) ? S.mediaFocus : 0;
-  const d = kolBudgetDrilldown(i);
-  const spend = d.entries
-    .filter(e => (e.paidStatus||'unpaid') === 'paid')
-    .reduce((a,e) => a + (e.feeAgreed||0), 0);
-  const c = S.settings.cur;
-  box.innerHTML = `<div class="pay-summary">
-    <div class="pay-tile"><span>${esc(d.month)} KOL budget</span><b>${esc(c)}${Math.round(d.pool).toLocaleString()}</b></div>
-    <div class="pay-tile"><span>Committed</span><b>${esc(c)}${Math.round(d.committed).toLocaleString()}</b></div>
-    <div class="pay-tile tot"><span>Spend (paid)</span><b>${esc(c)}${Math.round(spend).toLocaleString()}</b></div>
-  </div>`;
 }
 
 function renderKolStageTabs(){
@@ -667,6 +654,25 @@ function removeKolAt(idx, why){
   toast((why||'Removed') + ' ' + k.handle);
 }
 
+/* For a numeric-looking-handle record with no other record to merge into
+   (the "no clear match" bucket) — its own Display name field already
+   holds the real handle text (the one field the bad import got right),
+   there's just nothing else on the roster to cross-reference it against.
+   Rather than leave it stuck as an unusable "@2,308" row, move that text
+   into the handle field directly (an edit, not a deletion — open to team
+   same as any other roster edit) and clear the now-redundant name field. */
+function promoteDisplayNameToHandle(idx){
+  const k = S.kols[idx];
+  if(!k || !k.name) return;
+  const newHandle = k.name.trim().startsWith('@') ? k.name.trim() : '@' + k.name.trim();
+  const oldHandle = k.handle;
+  k.handle = newHandle;
+  k.name = '';
+  k.updatedAt = new Date().toISOString();
+  save(); renderKol(); renderOverview();
+  toast(`${oldHandle} → ${newHandle}`);
+}
+
 function renderDuplicateWatch(){
   const box = el('kolDuplicateBox'); if(!box) return;
   const groups = duplicateHandleGroups();
@@ -715,12 +721,18 @@ function renderDuplicateWatch(){
     </div>` : ''}
     ${unmatched.length ? `<div class="dup-section">
       <b>${unmatched.length} numeric-looking handle${unmatched.length===1?'':'s'} with no clear match.</b>
-      ${unmatched.map(x => `<span class="dup-chip bad">${esc(x.bad.handle)}</span>`).join('')}
-      <span class="fh">No other record's handle matches this one's Display name — open Edit to check it by hand rather than assume.</span>
+      <span class="fh">No other record's handle matches this one's Display name — if the name field holds real handle text, move it into the handle field below; otherwise open Edit to check it by hand rather than assume.</span>
+      ${unmatched.map(x => `<div class="dup-merge-row">
+        <span class="dup-chip bad">${esc(x.bad.handle)}</span>
+        ${x.bad.name ? `<span class="dup-arrow">→</span><span class="dup-chip">${esc(x.bad.name.trim().startsWith('@')?x.bad.name.trim():'@'+x.bad.name.trim())}</span>
+          <button class="btn-line sm" data-promote-handle="${x.badIdx}">Use as handle</button>`
+          : `<span class="fh">no Display name on file either — open Edit to check by hand</span>`}
+      </div>`).join('')}
     </div>` : ''}`;
 
   qsa('[data-merge-del]', box).forEach(b => b.addEventListener('click', () => removeKolAt(+b.dataset.mergeDel, 'Removed')));
   qsa('[data-crosstype-del]', box).forEach(b => b.addEventListener('click', () => removeKolAt(+b.dataset.crosstypeDel, 'Removed the inactive copy of')));
+  qsa('[data-promote-handle]', box).forEach(b => b.addEventListener('click', () => promoteDisplayNameToHandle(+b.dataset.promoteHandle)));
 }
 
 function renderKolTable(){
@@ -2066,9 +2078,11 @@ function renderKolBudgetDrilldown(){
   const d = kolBudgetDrilldown(i);
   const c = S.settings.cur;
   const over = d.diff < 0;
+  const spendPaid = d.entries.filter(e => (e.paidStatus||'unpaid')==='paid').reduce((a,e) => a + (e.feeAgreed||0), 0);
   box.innerHTML = `<div class="pay-summary">
       <div class="pay-tile"><span>${esc(d.month)} KOL budget</span><b>${esc(c)}${Math.round(d.pool).toLocaleString()}</b></div>
       <div class="pay-tile"><span>Committed to named creators</span><b>${esc(c)}${Math.round(d.committed).toLocaleString()}</b></div>
+      <div class="pay-tile"><span>Spend (paid)</span><b>${esc(c)}${Math.round(spendPaid).toLocaleString()}</b></div>
       <div class="pay-tile ${over?'over':'tot'}"><span>${over?'Over budget':'Headroom'}</span><b>${esc(c)}${Math.round(Math.abs(d.diff)).toLocaleString()}</b></div>
     </div>
     ${d.entries.length

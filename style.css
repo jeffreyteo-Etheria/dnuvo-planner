@@ -166,6 +166,22 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
 .p-note.lock::before{content:'◆ ';color:var(--violet)}
 .p-h .btn-solid,.p-h .btn-line{margin-left:auto}
 
+/* numbered flow indicator — threads a sequence of otherwise-separate
+   stacked panels (e.g. Media plan) into a legible step-by-step order */
+.step-chip{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;
+  border-radius:50%;background:var(--violet);color:#fff;font-family:var(--m);font-size:11px;
+  font-weight:700;flex-shrink:0}
+
+.goal-readout{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:16px;padding:13px 16px;
+  background:var(--violet-lt);border-radius:7px}
+.goal-readout>div{display:flex;flex-direction:column;gap:2px}
+.goal-readout .fh{margin:0}
+.goal-readout b{font-family:var(--m);font-size:15px;color:var(--violet)}
+.goal-readout b .sub{font-family:var(--s);font-size:11.5px;font-weight:400;color:var(--mute)}
+.goal-readout b.short{color:var(--red)}
+
+.kpis.k4{grid-template-columns:repeat(4,1fr)}
+
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .row2>.panel{margin-bottom:0}
 .row2+.row2{margin-top:16px}

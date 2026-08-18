@@ -372,17 +372,20 @@
       </div>
     </section>
 
-    <!-- ═══════ MEDIA ═══════ -->
+    <!-- ═══════ MEDIA ═══════
+         Flow: ① goal & month → ② budget → ③ AI-calculated ROAS/KPI →
+         ④ channel allocation (% control) → ⑤ schedule + insights. ═══════ -->
     <section class="view" data-view="media">
       <div class="panel">
-        <div class="p-h"><h3>Month focus navigator</h3><span class="p-note">simple month-by-month execution guidance</span></div>
+        <div class="p-h"><span class="step-chip">1</span><h3>Media plan goal &amp; month focus</h3><span class="p-note">pick a month to work on — everything below reacts to this</span></div>
+        <div id="mediaGoalReadout"></div>
         <div class="month-focus" id="mediaMonthFocus"></div>
       </div>
 
       <div class="panel">
         <div class="p-h">
-          <h3>Budget engine</h3>
-          <span class="p-note">flat M1–M3, then 30% of prior month's revenue</span>
+          <span class="step-chip">2</span><h3>Media budget</h3>
+          <span class="p-note">flat M1–M3, then 30% of prior month's revenue — every cell below is admin-editable, including each channel's dollar amount</span>
           <div class="sched-view-toggle">
             <button class="btn-line sm on" id="budgetViewAll">All months</button>
             <button class="btn-line sm" id="budgetViewMonth">Selected month</button>
@@ -394,23 +397,23 @@
       </div>
 
       <div class="panel">
+        <div class="p-h"><span class="step-chip">3</span><h3>AI-calculated ROAS &amp; KPI</h3>
+          <span class="p-note">derived automatically from the budget and phase ramp above — nothing to enter except the actual once it's known</span></div>
+        <div id="mediaKpiScorecard"></div>
+      </div>
+
+      <div class="panel">
         <div class="p-h">
-          <h3>Suggested channel split</h3>
-          <span class="p-note">for the month selected above — reacts to promo periods tagged in Campaign setup</span>
+          <span class="step-chip">4</span><h3>Channel allocation</h3>
+          <span class="p-note">for the month selected above — % split is fully admin-controlled; reacts to promo periods tagged in Campaign setup</span>
         </div>
         <div id="splitSuggestion"></div>
       </div>
 
       <div class="panel">
-        <div class="p-h"><h3>Persona research inputs</h3>
-          <span class="p-note">answers from Market personas routed here — <b>Market personas</b> tab to add more</span></div>
-        <div id="personaFindingsMedia"></div>
-      </div>
-
-      <div class="panel">
         <div class="p-h">
-          <h3>Allocation by product</h3>
-          <span class="p-note">every dollar named to a SKU or bundle</span>
+          <span class="step-chip">5</span><h3>Schedule of the plan</h3>
+          <span class="p-note">every dollar named to a SKU or bundle, month by month</span>
         </div>
         <div class="alloc-ctl">
           <label>Month
@@ -422,7 +425,13 @@
       </div>
 
       <div class="panel">
-        <div class="p-h"><h3>Channel briefs</h3><span class="p-note">how each is run</span></div>
+        <div class="p-h"><span class="step-chip">5</span><h3>Persona research inputs</h3>
+          <span class="p-note">supporting insight for the schedule above — answers from Market personas routed here, <b>Market personas</b> tab to add more</span></div>
+        <div id="personaFindingsMedia"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><span class="step-chip">5</span><h3>Channel briefs</h3><span class="p-note">supporting insight — how each channel is run</span></div>
         <div id="chanBriefs"></div>
       </div>
     </section>
@@ -642,8 +651,28 @@
 
       </div>
 
-      <!-- ── POST: scheduling and delivery ── -->
-      <div class="kstage" data-stage="post">
+      <!-- ── BUDGET & SPEND: the pool, then who it's committed to ── -->
+      <div class="kstage" data-stage="budget">
+
+        <div class="panel">
+          <div class="p-h"><h3>KOL budget vs. commitments</h3><span class="p-note">this month's KOL channel budget (set in Media plan) against named-creator fees</span></div>
+          <div id="kolBudgetDrilldown"></div>
+        </div>
+
+        <div class="panel">
+          <div class="p-h"><h3>KOL activation plan</h3><span class="p-note">benchmark vs actual across fees, GPM, ROAS, KPI</span></div>
+          <div id="kolActivation"></div>
+        </div>
+
+        <div class="panel">
+          <div class="p-h"><h3>Payments</h3><span class="p-note">what's owed, deposited and paid across every scheduled deliverable</span></div>
+          <div id="kolPayments"></div>
+        </div>
+
+      </div>
+
+      <!-- ── SCHEDULE: booking and delivery ── -->
+      <div class="kstage" data-stage="schedule">
 
         <div class="panel">
           <div class="p-h"><h3>Schedule</h3>
@@ -657,7 +686,6 @@
             <button class="btn-line sm" id="schedImport">Import schedule CSV</button>
             <input type="file" id="schedImportFile" accept=".csv,.txt" hidden>
             <button class="btn-line sm" id="schedAllIcs">Download all as calendar</button></div>
-          <div id="kolActivityTopline"></div>
           <div id="kolSched"></div>
           <div id="kolSchedBoard" hidden></div>
           <div id="kolSchedCal" hidden></div>
@@ -665,28 +693,13 @@
 
       </div>
 
-      <!-- ── KPI: benchmark vs actual ── -->
-      <div class="kstage" data-stage="kpi">
+      <!-- ── CONFIRMATION: weekly audit of what actually shipped ── -->
+      <div class="kstage" data-stage="confirm">
 
         <div class="panel">
           <div class="p-h"><h3>Weekly audit</h3>
             <span class="p-note">every creator, grouped by where they actually are — contacted/proposed, scheduled, confirmed, or delivered to date</span></div>
           <div id="kolWeeklyAudit"></div>
-        </div>
-
-        <div class="panel">
-          <div class="p-h"><h3>KOL activation plan</h3><span class="p-note">benchmark vs actual across fees, GPM, ROAS, KPI</span></div>
-          <div id="kolActivation"></div>
-        </div>
-
-        <div class="panel">
-          <div class="p-h"><h3>Payments</h3><span class="p-note">what's owed, deposited and paid across every scheduled deliverable</span></div>
-          <div id="kolPayments"></div>
-        </div>
-
-        <div class="panel">
-          <div class="p-h"><h3>KOL budget vs. commitments</h3><span class="p-note">this month's KOL channel budget against named-creator fees</span></div>
-          <div id="kolBudgetDrilldown"></div>
         </div>
 
         <div class="panel">

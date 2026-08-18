@@ -106,9 +106,14 @@ it — same site/role passcodes as above. Nothing to build or compile.
 
 ## KOL hub reference
 
-KOL hub has four stage tabs (`data-kstage="creators|content|post|kpi"`,
-click via `click [data-kstage="content"]` etc.) — most of the selectors
-below only exist once the matching tab is open.
+KOL hub has five stage tabs, in flow order — Creators → Content →
+Budget & spend → Schedule → Confirmation
+(`data-kstage="creators|content|budget|schedule|confirm"`, click via
+`click [data-kstage="budget"]` etc.) — most of the selectors below only
+exist once the matching tab is open. (Renamed from the earlier
+`post`/`kpi` keys — Post's budget mini-summary was folded into the new
+Budget & spend tab's `#kolBudgetDrilldown`, and `kpi` now holds only the
+Weekly audit + long-tail panel, renamed Confirmation.)
 
 **Creators tab — roster table (`#kolTable`) and filters (`#kolFilterBox`).**
 - Filters: search, Channel, Tier, Remark, Market, **List**
@@ -139,25 +144,67 @@ Partnership angles / Messages panels: `#addContentItem` opens a modal
 modal's own OK button) that adds a row to `#contentTable`. Filters live at
 `#contentFilterBox` (creator, status, and — once lists exist — list).
 
-**Post tab — Schedule.** Table/Board/Calendar toggle
+**Budget & spend tab.** `#kolBudgetDrilldown` (month's KOL channel pool
+vs. named-creator commitments, 4 tiles: budget / committed / spend-paid /
+headroom-or-over, then the full creator-by-creator table), `#kolActivation`
+(fee/GPM/ROAS/score benchmark vs actual), `#kolPayments` (owed/deposited/
+paid ledger). All read the month currently focused in Media plan
+(`S.mediaFocus`) — change it via `nav media` then a `[data-mf]` click, or
+`eval S.mediaFocus = <index>` for a quick test-only jump, then re-render
+via `nav kol`.
+
+**Schedule tab.** Table/Board/Calendar toggle
 (`#schedViewTable`/`#schedViewBoard`/`#schedViewCal`).
 - Board (`#kolSchedBoard`): filter bar above the Kanban columns —
   `#schedBoardTypeFilter` (Both / UGC only / Livestream only) and, once
   lists exist, `#schedBoardListFilter`. Each card shows a UGC/LIVE pill
-  next to the creator handle.
+  next to the creator handle. Dropping a card with no `proofLink` into
+  Done is blocked for UGC creators (toast + snap back) but **allowed**
+  for Livestream creators — it lands with `board:'done'` and shows
+  "⚠ No proof — flagged" on the card instead of blocking.
 - Calendar (`#kolSchedCal`): existing `#calFilterKol`/`#calFilterType`/
   `#calFilterStatus`, plus `#calFilterList` once lists exist.
 
-## Also new: Media plan budget + Pricing margin control
+**Confirmation tab — Weekly audit** (`#kolWeeklyAudit`). Four sections,
+cutting across the whole roster regardless of which Creators sub-tab is
+open: Contacted/proposed, Scheduled, Confirmed, Completed/delivered to
+date. Scheduled and Confirmed rows carry a `[data-auditdone="<entryId>"]`
+"Mark delivered" button — click it to flip that schedule entry straight
+to Done from the audit itself (same UGC-blocks/Livestream-flags rule as
+the Kanban board above). Completed rows missing a proof link render with
+class `proof-missing-row` and a `.proof-warn` "⚠ missing proof" badge
+instead of a link — this is intentional, not a bug, for Livestream
+deliverables that have no shareable recording.
+
+## Also new: Media plan flow (5 numbered steps) + Pricing margin control
 
 Not KOL hub, but touched in the same session and worth knowing if a task
-spans both:
-- **Media plan** (`nav media`): the Budget cell per month in `#budgetTable`
-  is now `[data-cell="month|<monthKey>|budgetOverride"]` — same
-  contenteditable pattern as the existing Units/Avg price cells (admin
-  writes straight through, team creates a proposal instead). An overridden
-  month shows `[data-resetbudget="<monthKey>"]` to revert to the
-  auto-calculated figure.
+spans both. `nav media` now renders as an explicit 1→5 flow (each panel's
+`.p-h` carries a `.step-chip` badge with its step number):
+1. **Goal & month focus** — `#mediaGoalReadout` (6-month goal vs. plan
+   total vs. the focused month's contribution) above the existing
+   `#mediaMonthFocus` M1–M6 picker.
+2. **Media budget** (`#budgetTable`) — the Budget cell per month is
+   `[data-cell="month|<monthKey>|budgetOverride"]` (same contenteditable
+   pattern as Units/Avg price; admin writes straight through, team creates
+   a proposal). An overridden month shows
+   `[data-resetbudget="<monthKey>"]` to revert to auto. **Each channel's
+   dollar cell in the same row is now also contenteditable**
+   (`[data-chedit="<monthKey>|<channelKey>"]`, admin-only) — editing one
+   rescales the other channels proportionally so the split still sums to
+   the month's total budget; this writes into the same `S.splitOverrides`
+   that step 4 reads.
+3. **AI-calculated ROAS & KPI** — `#mediaKpiScorecard`, a 4-tile
+   auto-computed readout (target ROAS / actual ROAS logged / this month's
+   budget / gates open) for whichever month is focused. No input here
+   except the actual ROAS figure, entered back in step 2's table
+   (`[data-actroas="<monthKey>"]`) or Reporting.
+4. **Channel allocation** (`#splitSuggestion`, renamed from "Suggested
+   channel split") — unchanged mechanically: admin-only `.split-pct`
+   inputs, must sum to 100%, `#saveCustomSplitBtn` / `#applySplitBtn`.
+5. **Schedule of the plan** (`#allocTable`, renamed from "Allocation by
+   product") plus two supporting-insight panels carrying the same step-5
+   chip: `#personaFindingsMedia` and `#chanBriefs`.
 - **Pricing** (`nav pricing`): admin-only `#marginTargetBox` above the
   floor-formula hint — `#marginModeSel` (`costMultiple` / `netMarginPct`)
   and, when `netMarginPct` is selected, `#marginPctSel` (10/20/30). The

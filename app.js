@@ -334,6 +334,33 @@ function recommendSplit(monthIndex){
   return out;
 }
 
+/* Lets admin set a channel's dollar amount directly on the Budget engine
+   table (instead of only via the % editor further down the page) — the
+   month's total budget stays whatever it already was; every other channel
+   is rescaled proportionally so the split still sums to 100%. Same
+   underlying S.splitOverrides as "Save custom split", just a second,
+   dollar-denominated entry point onto it. */
+function applyChannelDollarEdit(monthKey, chanKey, dollarValue){
+  const B = computeBudget();
+  const b = B.find(x => x.k === monthKey);
+  if(!b || !b.budget) return false;
+  const chK = Object.keys(CHAN_META);
+  const newPct = Math.max(0, Math.min(1, dollarValue / b.budget));
+  const others = chK.filter(k => k !== chanKey);
+  const oldOtherTotal = others.reduce((a,k) => a + (b.split[k]||0), 0);
+  const remaining = 1 - newPct;
+  const next = {}; next[chanKey] = newPct;
+  if(oldOtherTotal > 0){
+    others.forEach(k => { next[k] = (b.split[k]||0) / oldOtherTotal * remaining; });
+  } else {
+    others.forEach(k => { next[k] = remaining / others.length; });
+  }
+  S.splitOverrides = S.splitOverrides || {};
+  S.splitOverrides[monthKey] = next;
+  save();
+  return true;
+}
+
 /* ═══════════ OVERVIEW ═══════════ */
 function renderOverview(){
   const B = computeBudget();
@@ -1304,6 +1331,19 @@ function renderMedia(){
   const chK = Object.keys(CHAN_META);
   const activeMonth = Number.isInteger(S.mediaFocus) ? S.mediaFocus : 0;
 
+  const goalBox = el('mediaGoalReadout');
+  if(goalBox){
+    const goal = S.settings.goalUnits;
+    const tU = B.reduce((a,b)=>a+b.units,0);
+    const focus = B[activeMonth];
+    const focusPct = tU ? (focus.units / goal * 100) : 0;
+    goalBox.innerHTML = `<div class="goal-readout">
+      <div><span class="fh">6-month goal</span><b>${goal.toLocaleString()} units</b></div>
+      <div><span class="fh">Plan total</span><b class="${tU>=goal?'':'short'}">${tU.toLocaleString()} units</b></div>
+      <div><span class="fh">${esc(focus.label)} contributes</span><b>${focus.units.toLocaleString()} units <span class="sub">(${focusPct.toFixed(0)}% of goal)</span></b></div>
+    </div>`;
+  }
+
   const mf = el('mediaMonthFocus');
   if(mf){
     mf.innerHTML = MONTHS.map((m,i) =>
@@ -1318,9 +1358,9 @@ function renderMedia(){
       save();
       renderAlloc();
       renderSplitSuggestion();
+      renderMediaKpiScorecard();
       if(budgetTableView === 'month') renderMedia();
       if(typeof renderKolBudgetDrilldown === 'function') renderKolBudgetDrilldown();
-      if(typeof renderKolActivityTopline === 'function') renderKolActivityTopline();
     }));
   }
 
@@ -1350,7 +1390,9 @@ function renderMedia(){
       <td class="n"><b style="color:var(--violet)">${S.settings.cur}${cell('month', b.k, 'budgetOverride', Math.round(b.budget), b.label + ' — monthly budget (blank reverts to the flat/reinvest formula)')}</b>
         ${canEdit && b.overridden ? `<button class="btn-line sm budget-reset" data-resetbudget="${b.k}" title="Clear the override — auto would be ${cur(b.formulaBudget)}">↺ auto</button>`
           : `<span class="sub" style="display:block">${b.overridden ? 'overridden' : 'auto'}</span>`}</td>
-      ${chK.map(k=>`<td class="n">${b.ch[k]?cur(b.ch[k]):'—'}</td>`).join('')}${roasCells}</tr>`;
+      ${chK.map(k=>`<td class="n">${canEdit
+        ? `${S.settings.cur}<span class="ed" contenteditable="true" data-chedit="${b.k}|${k}" data-orig="${Math.round(b.ch[k]||0)}">${Math.round(b.ch[k]||0)}</span>`
+        : (b.ch[k]?cur(b.ch[k]):'—')}</td>`).join('')}${roasCells}</tr>`;
     }).join('') +
     (budgetTableView === 'month' ? '' : `<tr class="tot"><td>Total</td><td class="n">${B.reduce((a,b)=>a+b.units,0).toLocaleString()}</td><td class="n">—</td>
       <td class="n">${cur(B.reduce((a,b)=>a+b.rev,0))}</td>
@@ -1373,6 +1415,22 @@ function renderMedia(){
       return;
     }
     renderRail(); renderOverview(); renderMedia();
+  }));
+  qsa('[data-chedit]').forEach(c => c.addEventListener('blur', () => {
+    const [mk, chan] = c.dataset.chedit.split('|');
+    const raw = c.textContent.trim();
+    const val = num(raw);
+    if(raw && val === 0 && raw !== '0'){
+      toast(`"${raw}" doesn't look like a number — channel budget was not saved`);
+      c.textContent = c.dataset.orig;
+      return;
+    }
+    if(applyChannelDollarEdit(mk, chan, val)){
+      renderAll();
+    } else {
+      toast('Set a monthly budget before splitting it across channels');
+      c.textContent = c.dataset.orig;
+    }
   }));
 
   const kpiBox = el('monthKpiFocus');
@@ -1413,13 +1471,14 @@ function renderMedia(){
       qsa('[data-mf]').forEach(x => x.classList.toggle('on', +x.dataset.mf === S.mediaFocus));
       renderAlloc();
       renderSplitSuggestion();
+      renderMediaKpiScorecard();
       if(budgetTableView === 'month') renderMedia();
       if(typeof renderKolBudgetDrilldown === 'function') renderKolBudgetDrilldown();
-      if(typeof renderKolActivityTopline === 'function') renderKolActivityTopline();
     });
   }
   renderAlloc();
   renderSplitSuggestion();
+  renderMediaKpiScorecard();
 
   el('chanBriefs').innerHTML = CHAN_BRIEFS.map((c,i) =>
     `<div class="cb ${i===0?'open':''}"><div class="cb-h">
@@ -1428,6 +1487,33 @@ function renderMedia(){
       <span class="cb-x">+</span></div>
       <div class="cb-b"><dl>${c.rows.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div></div>`).join('');
   qsa('.cb-h').forEach(h => h.addEventListener('click', () => h.parentElement.classList.toggle('open')));
+}
+
+/* Step 3 of the Media plan flow — an always-visible, auto-computed readout
+   for the currently focused month: what ROAS this stage of the plan
+   requires, what's actually been logged, and whether that's on track. Pure
+   derivation from computeBudget()/targetRoasFor()/S.actuals — no separate
+   input, this is the "AI calculates ROAS, KPI score" step the plan
+   diagrams as sitting between setting a budget and tuning its channel
+   split. */
+function renderMediaKpiScorecard(){
+  const box = el('mediaKpiScorecard'); if(!box) return;
+  const B = computeBudget();
+  const i = Number.isInteger(S.mediaFocus) ? S.mediaFocus : 0;
+  const b = B[i];
+  const target = targetRoasFor(i);
+  const actualRaw = (S.actuals[b.k]||{}).roas || '';
+  const actualNum = num(actualRaw);
+  const status = !actualRaw ? { label:'No data yet', tone:'p-n' }
+    : actualNum >= target ? { label:'On track', tone:'p-g' }
+    : { label:'Behind', tone:'p-r' };
+  const gateHits = GATES.filter(g => (S.gates[g.id]||0) >= g.target).length;
+  box.innerHTML = `<div class="kpis k4">
+    <div class="kpi"><div class="kpi-l">${esc(b.label)} target ROAS</div><div class="kpi-v">${target.toFixed(2)}×</div><div class="kpi-s">from the phase ramp — floor holds M1–M3</div></div>
+    <div class="kpi"><div class="kpi-l">Actual ROAS logged</div><div class="kpi-v">${actualRaw ? actualNum.toFixed(2)+'×' : '—'}</div><div class="kpi-s"><span class="pill ${status.tone}">${status.label}</span></div></div>
+    <div class="kpi"><div class="kpi-l">Budget this month</div><div class="kpi-v">${cur(b.budget)}</div><div class="kpi-s">${b.overridden?'overridden':'auto — flat M1–M3, then 30% reinvest'}</div></div>
+    <div class="kpi"><div class="kpi-l">Launch gates open</div><div class="kpi-v">${gateHits}/${GATES.length}</div><div class="kpi-s">reviews, rating, ROAS, audience, buyers</div></div>
+  </div>`;
 }
 
 const budgetViewAllBtn = el('budgetViewAll');
