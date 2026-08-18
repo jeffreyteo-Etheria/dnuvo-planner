@@ -54,6 +54,10 @@ function applyProposal(p){
     const m = S.months.find(x => x.k === p.recId);
     if(m && p.field === 'budgetOverride' && p.to === '') delete m.budgetOverride;
     else if(m) m[p.field] = num(p.to);
+  } else if(p.type === 'monthMY'){
+    const m = S.monthsMY.find(x => x.k === p.recId);
+    if(m && p.field === 'budgetOverride' && p.to === '') delete m.budgetOverride;
+    else if(m) m[p.field] = num(p.to);
   } else if(p.type === 'kol'){
     const k = (S.kols||[]).find(x => x.id === p.recId);
     if(k) k[p.field] = p.to;
@@ -138,6 +142,10 @@ function wireCells(){
           // "override it to zero" — every other month field is always a
           // real required number, so this is the one case that needs to
           // distinguish "no value" from "cleared to 0".
+          if(m && field === 'budgetOverride' && next === '') delete m.budgetOverride;
+          else if(m) m[field] = num(next);
+        } else if(type === 'monthMY'){
+          const m = S.monthsMY.find(x=>x.k===id);
           if(m && field === 'budgetOverride' && next === '') delete m.budgetOverride;
           else if(m) m[field] = num(next);
         }

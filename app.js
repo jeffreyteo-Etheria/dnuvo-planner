@@ -31,6 +31,14 @@ function normalizeState(obj){
   s.settings = Object.assign({}, DEFAULTS, s.settings || {});
   s.skus     = s.skus     || SKUS.map(x => Object.assign({}, x));
   s.months   = s.months   || MONTHS.map(m => ({ k:m.k, units:m.units, price:m.price }));
+  /* MY hasn't launched — units start at 0 (that's a real fact, not a
+     placeholder) and price defaults to the same SG reference price point
+     (an already-verified number, not a new one) purely as a sensible
+     starting value to edit once real MY figures exist. No budgetOverride
+     by default, so computeBudgetMY() has nothing to derive a formula from
+     until admin sets one — MY budget is 0 until someone actually types a
+     number in, never auto-filled. */
+  s.monthsMY = s.monthsMY || MONTHS.map(m => ({ k:m.k, units:0, price:m.price }));
   s.compIntel = s.compIntel || COMPETITOR_INTEL.map(r => Object.assign({}, r));
   s.kols     = s.kols     || [];
   s.kolTombstones = s.kolTombstones || [];
@@ -303,6 +311,28 @@ function computeBudget(){
     const ch = {};
     Object.keys(meta.split).forEach(k => ch[k] = budget * (split[k] ?? meta.split[k]));
     return { k:m.k, label:meta.label, units:m.units, price:m.price, rev, profit, budget, formulaBudget, overridden, ch, meta, split };
+  });
+}
+
+/* Malaysia sits alongside the Singapore plan above, not folded into it —
+   same 6-month calendar (reuses MONTHS[i] for dates/labels), independent
+   units/price/budget. Unlike SG there's no flat/reinvest formula to
+   default to (that ramp was authored for SG's specific launch sequence),
+   so formulaBudget is always 0 here — MY budget only ever comes from an
+   explicit admin override, never auto-filled. Routes through a single
+   Shopify line rather than the 5-channel SG split, since Shopify DTC is
+   the realistic first channel for this market, well before local
+   marketplace presence exists. */
+function computeBudgetMY(){
+  const st = S.settings;
+  const margin = st.marginPct/100;
+  return (S.monthsMY||[]).map((m,i) => {
+    const meta = MONTHS[i];
+    const rev = m.units * m.price;
+    const profit = rev * margin;
+    const overridden = m.budgetOverride != null && m.budgetOverride !== '';
+    const budget = overridden ? num(m.budgetOverride) : 0;
+    return { k:m.k, label:meta.label, units:m.units, price:m.price, rev, profit, budget, formulaBudget:0, overridden, meta };
   });
 }
 
@@ -1364,47 +1394,71 @@ function renderMedia(){
     }));
   }
 
+  const BMY = computeBudgetMY();
   const resultCol = budgetTableView === 'month' ? '<th>Result</th>' : '';
+  const chColspan = chK.length;
+
+  const sgRow = (b,i) => {
+    const target = targetRoasFor(i);
+    const actualRaw = (S.actuals[b.k]||{}).roas || '';
+    const actualNum = num(actualRaw);
+    const result = budgetTableView === 'month'
+      ? `<td>${!actualRaw ? `<span class="pill p-n">No data yet</span>`
+          : actualNum >= target ? `<span class="pill p-g">On track</span>`
+          : `<span class="pill p-r">Behind</span>`}</td>`
+      : '';
+    const roasCells = `<td class="n">${target.toFixed(2)}×</td>
+        <td class="n"><span class="ed" contenteditable="true" data-actroas="${b.k}">${esc(actualRaw)}</span></td>${result}`;
+    return `<tr class="mkt-row mkt-sg">
+    <td><b>${b.label}</b><span class="pill p-v mkt-tag">SG</span></td>
+    <td class="n">${cell('month', b.k, 'units', b.units, b.label + ' — units target')}</td>
+    <td class="n">${cell('month', b.k, 'price', b.price, b.label + ' — average price', {prefix:S.settings.cur})}</td>
+    <td class="n">${cur(b.rev)}</td>
+    ${canEdit?`<td class="n">${cur(b.profit)}</td>`:''}
+    <td class="n"><b style="color:var(--violet)">${S.settings.cur}${cell('month', b.k, 'budgetOverride', Math.round(b.budget), b.label + ' — SG monthly budget (blank reverts to the flat/reinvest formula)')}</b>
+      ${canEdit && b.overridden ? `<button class="btn-line sm budget-reset" data-resetbudget="${b.k}" title="Clear the override — auto would be ${cur(b.formulaBudget)}">↺ auto</button>`
+        : `<span class="sub" style="display:block">${b.overridden ? 'overridden' : 'auto'}</span>`}</td>
+    ${chK.map(k=>`<td class="n">${canEdit
+      ? `${S.settings.cur}<span class="ed" contenteditable="true" data-chedit="${b.k}|${k}" data-orig="${Math.round(b.ch[k]||0)}">${Math.round(b.ch[k]||0)}</span>`
+      : (b.ch[k]?cur(b.ch[k]):'—')}</td>`).join('')}${roasCells}</tr>`;
+  };
+
+  const myRow = (bmy,i) => {
+    const emptyRoas = budgetTableView === 'month' ? '<td><span class="nv">—</span></td>' : '';
+    return `<tr class="mkt-row mkt-my">
+    <td><span class="mkt-my-label">${bmy.label}</span><span class="pill p-n mkt-tag">MY</span></td>
+    <td class="n">${cell('monthMY', bmy.k, 'units', bmy.units, bmy.label + ' — MY units target')}</td>
+    <td class="n">${cell('monthMY', bmy.k, 'price', bmy.price, bmy.label + ' — MY average price', {prefix:S.settings.cur})}</td>
+    <td class="n">${cur(bmy.rev)}</td>
+    ${canEdit?`<td class="n">${cur(bmy.profit)}</td>`:''}
+    <td class="n"><b style="color:var(--violet)">${S.settings.cur}${cell('monthMY', bmy.k, 'budgetOverride', Math.round(bmy.budget), bmy.label + ' — MY monthly budget (no auto formula — 0 until set)')}</b>
+      ${canEdit && bmy.overridden ? `<button class="btn-line sm budget-reset" data-resetbudget-my="${bmy.k}" title="Clear the override — MY has no auto formula, so this reverts to S$0">↺ auto</button>`
+        : `<span class="sub" style="display:block">${bmy.overridden ? 'overridden' : 'auto'}</span>`}</td>
+    <td class="n" colspan="${chColspan}">${bmy.budget ? `Shopify ${cur(bmy.budget)}` : '<span class="nv">Shopify — no budget yet</span>'}</td>
+    <td class="n"><span class="nv">—</span></td><td class="n"><span class="nv">—</span></td>${emptyRoas}</tr>`;
+  };
+
   el('budgetTable').innerHTML = `<thead><tr><th>Month</th><th class="n">Units <span class="fh">(targeted SKU qty)</span></th>
       <th class="n" title="Revenue ÷ units — the average value per unit sold, i.e. AOV in this model">Avg price (AOV)</th>
       <th class="n">Revenue</th>${canEdit?'<th class="n">Profit</th>':''}<th class="n">Budget</th>
       ${chK.map(k=>`<th class="n">${CHAN_META[k].name}</th>`).join('')}<th class="n">Target ROAS</th><th class="n">Actual ROAS</th>${resultCol}</tr></thead><tbody>` +
-    (budgetTableView === 'month' ? [B[activeMonth]] : B).map((b,rowI) => {
-      const i = budgetTableView === 'month' ? activeMonth : rowI;
-      const target = targetRoasFor(i);
-      const actualRaw = (S.actuals[b.k]||{}).roas || '';
-      const actualNum = num(actualRaw);
-      const result = budgetTableView === 'month'
-        ? `<td>${!actualRaw ? `<span class="pill p-n">No data yet</span>`
-            : actualNum >= target ? `<span class="pill p-g">On track</span>`
-            : `<span class="pill p-r">Behind</span>`}</td>`
-        : '';
-      const roasCells = `<td class="n">${target.toFixed(2)}×</td>
-          <td class="n"><span class="ed" contenteditable="true" data-actroas="${b.k}">${esc(actualRaw)}</span></td>${result}`;
-      return `<tr>
-      <td><b>${b.label}</b></td>
-      <td class="n">${cell('month', b.k, 'units', b.units, b.label + ' — units target')}</td>
-      <td class="n">${cell('month', b.k, 'price', b.price, b.label + ' — average price', {prefix:S.settings.cur})}</td>
-      <td class="n">${cur(b.rev)}</td>
-      ${canEdit?`<td class="n">${cur(b.profit)}</td>`:''}
-      <td class="n"><b style="color:var(--violet)">${S.settings.cur}${cell('month', b.k, 'budgetOverride', Math.round(b.budget), b.label + ' — monthly budget (blank reverts to the flat/reinvest formula)')}</b>
-        ${canEdit && b.overridden ? `<button class="btn-line sm budget-reset" data-resetbudget="${b.k}" title="Clear the override — auto would be ${cur(b.formulaBudget)}">↺ auto</button>`
-          : `<span class="sub" style="display:block">${b.overridden ? 'overridden' : 'auto'}</span>`}</td>
-      ${chK.map(k=>`<td class="n">${canEdit
-        ? `${S.settings.cur}<span class="ed" contenteditable="true" data-chedit="${b.k}|${k}" data-orig="${Math.round(b.ch[k]||0)}">${Math.round(b.ch[k]||0)}</span>`
-        : (b.ch[k]?cur(b.ch[k]):'—')}</td>`).join('')}${roasCells}</tr>`;
-    }).join('') +
-    (budgetTableView === 'month' ? '' : `<tr class="tot"><td>Total</td><td class="n">${B.reduce((a,b)=>a+b.units,0).toLocaleString()}</td><td class="n">—</td>
-      <td class="n">${cur(B.reduce((a,b)=>a+b.rev,0))}</td>
-      ${canEdit?`<td class="n">${cur(B.reduce((a,b)=>a+b.profit,0))}</td>`:''}
-      <td class="n">${cur(B.reduce((a,b)=>a+b.budget,0))}</td>
+    (budgetTableView === 'month' ? [activeMonth] : B.map((b,rowI)=>rowI)).map(i => sgRow(B[i], i) + myRow(BMY[i], i)).join('') +
+    (budgetTableView === 'month' ? '' : `<tr class="tot"><td>Total (SG + MY)</td><td class="n">${(B.reduce((a,b)=>a+b.units,0)+BMY.reduce((a,b)=>a+b.units,0)).toLocaleString()}</td><td class="n">—</td>
+      <td class="n">${cur(B.reduce((a,b)=>a+b.rev,0)+BMY.reduce((a,b)=>a+b.rev,0))}</td>
+      ${canEdit?`<td class="n">${cur(B.reduce((a,b)=>a+b.profit,0)+BMY.reduce((a,b)=>a+b.profit,0))}</td>`:''}
+      <td class="n">${cur(B.reduce((a,b)=>a+b.budget,0)+BMY.reduce((a,b)=>a+b.budget,0))}</td>
       ${chK.map(k=>`<td class="n">${cur(B.reduce((a,b)=>a+(b.ch[k]||0),0))}</td>`).join('')}
-      <td class="n">—</td><td class="n">—</td></tr>`) + `</tbody>`;
+      <td class="n">—</td><td class="n">—</td></tr>
+      <tr class="tot"><td colspan="${4+(canEdit?1:0)}" class="n">of which MY → Shopify</td><td class="n" colspan="${1+chColspan}">${cur(BMY.reduce((a,b)=>a+b.budget,0))}</td><td class="n">—</td><td class="n">—</td></tr>`) + `</tbody>`;
 
   wireCells();
   qsa('[data-resetbudget]').forEach(b => b.addEventListener('click', () => {
     const m = S.months.find(x => x.k === b.dataset.resetbudget);
     if(m){ delete m.budgetOverride; save(); renderAll(); toast('Back to the automatic budget'); }
+  }));
+  qsa('[data-resetbudget-my]').forEach(b => b.addEventListener('click', () => {
+    const m = S.monthsMY.find(x => x.k === b.dataset.resetbudgetMy);
+    if(m){ delete m.budgetOverride; save(); renderAll(); toast('MY budget back to S$0'); }
   }));
   qsa('[data-actroas]').forEach(c => c.addEventListener('blur', () => {
     const k = c.dataset.actroas;
@@ -1782,6 +1836,75 @@ el('genPrompt').addEventListener('click', () => {
 });
 el('copyPrompt').addEventListener('click', () => {
   navigator.clipboard.writeText(el('promptText').textContent)
+    .then(()=>toast('Prompt copied — paste it into the tool'))
+    .catch(()=>toast('Select the text and copy manually'));
+});
+
+/* ═══════════ URL → SOCIAL CONTENT (KOL hub, after Research a creator) ═══════════
+   No API key or server fetch exists in this static site — same constraint
+   as the creator-research prompt above — so this follows the
+   url-to-social-content skill's manual-tool path: build one prompt that
+   makes whichever AI tool the user pastes it into do the fetch, hold to a
+   claim ceiling (nothing invented beyond the source article), and route
+   the result through d.nuvo's own message stack instead of a generic
+   brand voice. The human-review gate that skill requires becomes "review
+   the tool's output yourself before using it" — there's no way to build
+   an in-app review step without a backend, so this is the honest
+   equivalent within that constraint. */
+function buildUrlContentPrompt(url, typeKey, aspect){
+  const type = URL_CONTENT_TYPES.find(t => t.k === typeKey) || URL_CONTENT_TYPES[0];
+  const lane = DNUVO_MESSAGE_STACK.find(m => m.lane === type.lane) || DNUVO_MESSAGE_STACK[0];
+  const stack = DNUVO_MESSAGE_STACK.map(m => `- ${m.lane}: "${m.text}"`).join('\n');
+  return `Read this article/post and build ONE grounded d.nuvo social content concept from it. Do not skip the source — everything you output must trace back to it.
+
+SOURCE URL: ${url}
+CONTENT TYPE: ${type.name} — ${type.framing}
+IMAGE ASPECT RATIO: ${aspect}
+
+STEP 1 — Read the source
+Fetch and read the URL above. If you cannot access it (paywalled, blocked, broken link), say so plainly and stop — do not guess the content from the URL or title alone.
+
+STEP 2 — Propose ONE concept, grounded only in what you just read
+Return: a headline, a one-line angle, a visual theme, 3-4 short supporting points, and — only if the article itself states a real number or study result — one sourced stat with where in the article it came from. If nothing in the article qualifies as a stat, leave it out entirely. Do not invent, estimate, or round a number to fill this in.
+
+STEP 3 — Redesign the messaging through d.nuvo's brand lens
+d.nuvo's four-layer message stack (use the lane below as the lead layer for this content type, the others as support, not filler):
+${stack}
+Lead layer for ${type.name}: ${lane.lane} — "${lane.text}"
+
+d.nuvo differentiation to weave in where it genuinely fits the source material: a patented ceramide delivery system designed for absorption plus repair — not a generic moisturizer claim.
+
+CLAIM POLICY — this overrides anything that would otherwise sound punchier:
+- Never publish a number (percentage, "Nx deeper", days-to-result) unless it is either (a) directly stated in the source article with a citable line, or (b) already an approved d.nuvo benchmark you were given separately. If validation is pending, use non-numeric mechanism language instead — describe what the product does, not an unverified figure for how well it does it.
+- Never claim d.nuvo treats or cures a medical condition (e.g. acne, eczema). Mechanism and visible-comfort language only.
+- If the source article makes a claim you cannot verify, do not carry that claim into the d.nuvo version — drop it or rewrite it as a question/observation instead.
+
+STEP 4 — Build the image generation package
+From the concept above (not a generic stock idea), output:
+1. An image-generation prompt for a ${aspect} ${type.k === 'educational' || type.k === 'science' ? 'infographic-style' : 'social'} image — no logos or watermarks, no readable text baked into the image itself (captions go in the post, not the art), no "Made with AI" disclaimer caption.
+2. Alt text, trimmed to about 160 characters.
+3. A suggested filename (kebab-case, describes the content, ends in an image extension).
+4. A short list of anything you defaulted on that wasn't explicitly given to you (tone, palette, aspect ratio assumption, etc.) — so a human reviewer knows exactly what to check.
+
+Label the whole output "PENDING REVIEW — not yet approved." This concept has not been reviewed by a human yet; do not treat it as final or publish-ready.`;
+}
+
+const ugcTypeSel = el('ugcType');
+if(ugcTypeSel && !ugcTypeSel.options.length){
+  ugcTypeSel.innerHTML = URL_CONTENT_TYPES.map(t => `<option value="${t.k}">${esc(t.name)}</option>`).join('');
+}
+
+const genUrlPromptBtn = el('genUrlPrompt');
+if(genUrlPromptBtn) genUrlPromptBtn.addEventListener('click', () => {
+  const url = el('ugcUrl').value.trim();
+  if(!url){ toast('Paste an article or post URL first'); el('ugcUrl').focus(); return; }
+  el('urlPromptText').textContent = buildUrlContentPrompt(url, el('ugcType').value, el('ugcAspect').value);
+  el('urlPromptOut').hidden = false;
+  el('urlPromptOut').scrollIntoView({behavior:'smooth', block:'nearest'});
+});
+const copyUrlPromptBtn = el('copyUrlPrompt');
+if(copyUrlPromptBtn) copyUrlPromptBtn.addEventListener('click', () => {
+  navigator.clipboard.writeText(el('urlPromptText').textContent)
     .then(()=>toast('Prompt copied — paste it into the tool'))
     .catch(()=>toast('Select the text and copy manually'));
 });

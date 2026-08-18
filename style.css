@@ -182,6 +182,13 @@ input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
 
 .kpis.k4{grid-template-columns:repeat(4,1fr)}
 
+/* Media budget SG/MY row pair */
+.mkt-tag{margin-left:7px;font-size:9px;padding:1px 6px;vertical-align:middle}
+tr.mkt-my td{color:var(--mute)}
+tr.mkt-my td .ed{color:var(--violet)}
+.mkt-my-label{font-style:italic}
+tr.mkt-my{border-bottom:1px solid var(--line-2)}
+
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .row2>.panel{margin-bottom:0}
 .row2+.row2{margin-top:16px}

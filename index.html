@@ -604,6 +604,32 @@
           </div>
         </div>
 
+        <div class="panel">
+          <div class="p-h"><h3>Build social content from a URL</h3>
+            <span class="p-note">analyze an article or post, redesign it through d.nuvo's brand lens — nothing published without human review</span></div>
+          <div class="research">
+            <div class="res-row">
+              <input id="ugcUrl" placeholder="https://... article or social post URL" autocomplete="off">
+              <select id="ugcType">
+                <!-- populated from URL_CONTENT_TYPES -->
+              </select>
+              <select id="ugcAspect">
+                <option value="16:9">16:9</option>
+                <option value="1:1">1:1</option>
+              </select>
+              <button class="btn-solid" id="genUrlPrompt">Build prompt</button>
+            </div>
+            <div class="prompt-out" id="urlPromptOut" hidden>
+              <div class="po-h"><span>Paste this into ChatGPT, Copilot, Gemini, or your image tool of choice</span>
+                <button class="btn-line sm" id="copyUrlPrompt">Copy</button></div>
+              <pre id="urlPromptText"></pre>
+              <div class="po-warn"><b>Claim ceiling.</b> Every fact and stat in the result must trace back to the
+                source article — nothing invented, nothing estimated. The output is labeled Pending Review; check
+                it against d.nuvo's claim policy yourself before it goes anywhere near a post.</div>
+            </div>
+          </div>
+        </div>
+
       </div>
 
       <!-- ── CONTENT: creator-facing coordination ── -->
