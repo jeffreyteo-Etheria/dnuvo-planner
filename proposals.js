@@ -540,13 +540,31 @@ function renderShopfrontNote(rows){
    pricing above; nothing here retags a month or touches channel-split
    suggestions in Media plan. */
 let selectedPromo = 'bau';
+let selectedPromoManual = false;
 
 function renderPromoGrid(){
   const box = el('promoGrid'); if(!box) return;
+
+  // Follow whatever Campaign setup has tagged active until the user
+  // manually picks a card themselves — otherwise Pricing shows a
+  // different "current promo" than Media plan, the 6-month calendar and
+  // Brand pulse already treat as active. A manual click opts out of
+  // auto-follow for the rest of the session (see the click handler
+  // below); until then this re-syncs on every render, including the
+  // common case of tagging a promo in Campaign setup *after* Pricing has
+  // already rendered once at boot.
+  if(!selectedPromoManual){
+    const tagged = PROMO_PERIODS.find(p => (S.settings.promoPeriods||{})[p.k]?.active);
+    selectedPromo = tagged ? tagged.k : 'bau';
+  }
+
   box.innerHTML = `<div class="promo-grid">${PROMO_PERIODS.map(p => {
     const pct = (S.settings.promoDiscounts||{})[p.k] != null ? S.settings.promoDiscounts[p.k] : p.discountPct;
+    const tag = (S.settings.promoPeriods||{})[p.k];
+    const monthLabel = (tag && tag.active) ? ((MONTHS.find(m=>m.k===tag.month)||{}).label || tag.month) : '';
     return `<div class="promo-card selectable${selectedPromo===p.k?' on':''}" data-promo="${p.k}">
       <span>${esc(p.k)}</span><b>${esc(p.name)}</b>
+      ${monthLabel?`<span class="pill p-v" style="display:block;width:fit-content;margin:4px 0">📅 tagged for ${esc(monthLabel)} in Campaign setup</span>`:''}
       <p>${esc(p.mechanicNote)}</p>
       <p style="margin-top:6px">Suggested discount: ${isAdmin()
         ? `<input type="number" min="0" max="90" class="pct-in" data-promopct="${p.k}" value="${pct}">%`
@@ -556,6 +574,7 @@ function renderPromoGrid(){
 
   qsa('[data-promo]', box).forEach(card => card.addEventListener('click', () => {
     selectedPromo = card.dataset.promo;
+    selectedPromoManual = true;
     renderPromoGrid();
     renderPromoPriceTable();
   }));
