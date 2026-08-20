@@ -260,14 +260,14 @@ el('signOut').addEventListener('click', () => location.reload());
 /* ═══════════ NAV ═══════════ */
 const VIEW_META = {
   teamdash :['Team dashboard','The goal, the plan, the budget — then four steps to run it.'],
-  overview :['Overview','Where the launch stands today.'],
+  overview :['Roles','Where the launch stands today.'],
   strategy :['Strategy','Positioning, phases and the rules that hold them.'],
   brandpulse:['Brand pulse','Competitor intelligence, personas, and site audit alignment.'],
   pricing  :['Pricing','Tiered architecture across three platforms.'],
   media    :['Media plan','Budget, and every dollar named to a product.'],
   expansion:['MY/TH expansion','Regulatory path, distributor candidates and market fit for Malaysia and Thailand.'],
   kol      :['KOL hub','Source, verify, brief and manage creators.'],
-  content  :['Content','Brand-persona AI prompts for ad hooks and creative.'],
+  content  :['Brand Personas','AI prompts for ad hooks and creative, built on locked brand-ambassador personas.'],
   events   :['Events','Activations, pop-ups and live sessions.'],
   calendar :['6-month calendar','Six months, and the first eight weeks in detail. For real creator booking dates, see KOL hub → Post → Calendar.'],
   pending  :['Pending changes','Proposed by the team. Nothing is applied until you decide.'],
@@ -469,6 +469,7 @@ function renderOverview(){
   const ph = PHASES.find(p => {
     if(p.n===1) return (S.gates.reviews||0) < 50 || (S.gates.rating||0) < 4.7;
     if(p.n===2) return (S.gates.roas||0) < 1.5;
+    if(p.n===3) return (S.gates.buyers||0) < 200;
     return true;
   }) || PHASES[0];
   el('phaseNow').innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
@@ -1223,13 +1224,22 @@ function renderAddSkuBox(){
 function renderSkuFloorMatrix(){
   const box = el('skuFloorMatrix'); if(!box) return;
   const admin = isAdmin();
+  S.shopfrontPrices = S.shopfrontPrices || {};
   const rows = S.skus.map(s => {
-    const perChan = SHOPFRONT_PLATFORMS.map(p => ({ p, floor: floorOf(s, p.k), max: maxDiscount(s, p.k) }));
+    const live = S.shopfrontPrices[s.id] || {};
+    const perChan = SHOPFRONT_PLATFORMS.map(p => {
+      const floor = floorOf(s, p.k), max = maxDiscount(s, p.k);
+      const liveRec = live[p.k];
+      return { p, floor, max, livePrice: liveRec ? liveRec.price : null, liveBelow: liveRec ? liveRec.price < floor : false };
+    });
     const belowFloor = perChan.filter(c => s.sale <= c.floor);
+    const liveBelowChans = perChan.filter(c => c.liveBelow);
     const minC = perChan.reduce((a,b) => b.max < a.max ? b : a);
     const maxC = perChan.reduce((a,b) => b.max > a.max ? b : a);
     let flag = null;
-    if(belowFloor.length){
+    if(liveBelowChans.length){
+      flag = { tone:'bad', text:`Live logged price is already below floor on ${liveBelowChans.map(c=>c.p.name+' ('+cur(c.livePrice)+' vs floor '+cur(c.floor)+')').join(', ')} — this is a real listing, not a plan number.` };
+    } else if(belowFloor.length){
       flag = { tone:'bad', text:`SRP may sit at or below the floor on ${belowFloor.map(c=>c.p.name).join(', ')} — check before discounting at all.` };
     } else if(minC.max < 10){
       flag = { tone:'warn', text:`SRP is close to floor on ${minC.p.name} (only ${minC.max}% headroom). Consider raising SRP before running any flash promo on this SKU.` };
@@ -1242,7 +1252,7 @@ function renderSkuFloorMatrix(){
 
   const colCount = 3 + (admin?1:0) + SHOPFRONT_PLATFORMS.length;
   const head = `<th>SKU</th><th class="n">SRP</th>${admin?'<th class="n">COGS</th>':''}` +
-    SHOPFRONT_PLATFORMS.map(p => `<th>${esc(p.name)} floor / max off</th>`).join('') + '<th></th>';
+    SHOPFRONT_PLATFORMS.map(p => `<th>${esc(p.name)} floor / max off / live price</th>`).join('') + '<th></th>';
 
   box.innerHTML = `<div class="tb-wrap"><table class="tb"><thead><tr>${head}</tr></thead><tbody>` +
     rows.map(({s,perChan,flag,bundles}) => {
@@ -1251,11 +1261,13 @@ function renderSkuFloorMatrix(){
         <td><b>${esc(s.name)}</b>${bundles.length?`<span class="sub">in ${bundles.map(b=>esc(b.name)+' ('+cur(bundleView(b).price)+')').join(', ')}</span>`:''}</td>
         <td class="n">${cur(s.sale)}</td>
         ${admin?`<td class="n">${cur(s.cogs)}</td>`:''}
-        ${perChan.map(c => `<td class="n">${cur(c.floor)}<span class="pill ${c.max>=20?'p-g':c.max>=10?'p-a':'p-r'}" style="display:block;margin-top:4px;width:fit-content">${c.max}% max</span></td>`).join('')}
+        ${perChan.map(c => `<td class="n">${cur(c.floor)}<span class="pill ${c.max>=20?'p-g':c.max>=10?'p-a':'p-r'}" style="display:block;margin-top:4px;width:fit-content">${c.max}% max</span>
+          ${c.livePrice!=null ? `<span class="sub" style="${c.liveBelow?'color:var(--red)':''}">live ${cur(c.livePrice)}${c.liveBelow?' ⚠':''}</span>` : '<span class="sub" style="color:var(--faint)">no live price logged</span>'}</td>`).join('')}
         <td>${del}</td></tr>`;
       const flagRow = flag ? `<tr class="dup-note${flag.tone==='bad'?' bad':''}"><td colspan="${colCount}">🚩 ${esc(flag.text)}</td></tr>` : '';
       return row + flagRow;
-    }).join('') + `</tbody></table></div>`;
+    }).join('') + `</tbody></table></div>
+    <p class="fh" style="margin-top:10px">Live prices are the same figures logged in the "Live shopfront pricing" panel below — update them there to keep this comparison current.</p>`;
 
   qsa('[data-skudel]', box).forEach(b => b.addEventListener('click', () => {
     if(!isAdmin()) return;
@@ -1390,6 +1402,7 @@ function renderPricing(){
   if(typeof renderShopSync === 'function') renderShopSync();
   if(typeof renderShopfrontLinks === 'function') renderShopfrontLinks();
   if(typeof renderShopfrontPriceTable === 'function') renderShopfrontPriceTable();
+  if(typeof renderPromoComparison === 'function') renderPromoComparison();
   if(typeof renderPromoGrid === 'function') renderPromoGrid();
   if(typeof renderPromoPriceTable === 'function') renderPromoPriceTable();
   renderSim();
@@ -1622,11 +1635,13 @@ function renderMedia(){
     <td class="n"><span class="nv">—</span></td><td class="n"><span class="nv">—</span></td>${emptyRoas}</tr>`;
   };
 
+  const showMy = !!S.settings.showMyBudget;
+  if(el('showMyBudgetToggle')) el('showMyBudgetToggle').checked = showMy;
   el('budgetTable').innerHTML = `<thead><tr><th>Month</th><th class="n">Units <span class="fh">(targeted SKU qty)</span></th>
       <th class="n" title="Revenue ÷ units — the average value per unit sold, i.e. AOV in this model">Avg price (AOV)</th>
       <th class="n">Revenue</th>${canEdit?'<th class="n">Profit</th>':''}<th class="n">Budget</th>
       ${chK.map(k=>`<th class="n">${CHAN_META[k].name}</th>`).join('')}<th class="n">Target ROAS</th><th class="n">Actual ROAS</th>${resultCol}</tr></thead><tbody>` +
-    (budgetTableView === 'month' ? [activeMonth] : B.map((b,rowI)=>rowI)).map(i => sgRow(B[i], i) + myRow(BMY[i], i)).join('') +
+    (budgetTableView === 'month' ? [activeMonth] : B.map((b,rowI)=>rowI)).map(i => sgRow(B[i], i) + (showMy ? myRow(BMY[i], i) : '')).join('') +
     (budgetTableView === 'month' ? '' : `<tr class="tot"><td>Total (SG + MY)</td><td class="n">${(B.reduce((a,b)=>a+b.units,0)+BMY.reduce((a,b)=>a+b.units,0)).toLocaleString()}</td><td class="n">—</td>
       <td class="n">${cur(B.reduce((a,b)=>a+b.rev,0)+BMY.reduce((a,b)=>a+b.rev,0))}</td>
       ${canEdit?`<td class="n">${cur(B.reduce((a,b)=>a+b.profit,0)+BMY.reduce((a,b)=>a+b.profit,0))}</td>`:''}
@@ -1766,6 +1781,12 @@ function setBudgetTableView(v){
 if(budgetViewAllBtn) budgetViewAllBtn.addEventListener('click', () => setBudgetTableView('all'));
 if(budgetViewMonthBtn) budgetViewMonthBtn.addEventListener('click', () => setBudgetTableView('month'));
 
+const showMyBudgetToggle = el('showMyBudgetToggle');
+if(showMyBudgetToggle) showMyBudgetToggle.addEventListener('change', () => {
+  S.settings.showMyBudget = showMyBudgetToggle.checked;
+  save(); renderMedia();
+});
+
 /* The header's "Saved" dot only ever meant "written to this browser's
    localStorage" — it says nothing about whether anyone else will see the
    edit. That gap is exactly what reads as budget numbers "refreshing":
@@ -1801,6 +1822,17 @@ if(budgetSaveBtn) budgetSaveBtn.addEventListener('click', async () => {
   renderBudgetSyncStatus();
 });
 
+/* Surfaces Brand pulse's site-audit health score right where its channel's
+   budget share is decided — the audit score and this split otherwise never
+   cross-reference each other. Only tiktok/shopee carry an audit entry;
+   shopify runs DTC outside this paid-channel split, google/meta have none. */
+function siteAuditHealthBadge(k){
+  const a = S.siteAudit && S.siteAudit[k];
+  if(!a) return '';
+  const tone = a.score >= 4 ? 'p-g' : a.score >= 3 ? 'p-a' : 'p-r';
+  return ` <span class="pill ${tone}" style="font-size:10.5px" title="${esc(a.issue||'')}">Health ${a.score}/5</span>`;
+}
+
 function renderSplitSuggestion(){
   const box = el('splitSuggestion'); if(!box) return;
   const i = Number.isInteger(S.mediaFocus) ? S.mediaFocus : 0;
@@ -1811,10 +1843,15 @@ function renderSplitSuggestion(){
   const changed = chK.some(k => Math.abs((suggested[k]||0) - (current[k]||0)) > 0.001);
   const canEdit = isAdmin();
 
+  const strained = chK.filter(k => {
+    const a = S.siteAudit && S.siteAudit[k];
+    return a && a.score <= 3 && (current[k]||0) >= 0.2;
+  });
+
   box.innerHTML = `<div class="split-panel">
     <div class="tb-wrap"><table class="tb">
       <thead><tr><th>Channel</th><th class="n">Current</th><th class="n">Suggested</th>${canEdit?'<th class="n">Custom %</th>':''}</tr></thead>
-      <tbody>${chK.map(k => `<tr><td>${esc(CHAN_META[k].name)}</td>
+      <tbody>${chK.map(k => `<tr><td>${esc(CHAN_META[k].name)}${siteAuditHealthBadge(k)}</td>
         <td class="n">${Math.round((current[k]||0)*100)}%</td>
         <td class="n">${changed ? `<b class="sug-up">${Math.round((suggested[k]||0)*100)}%</b>` : Math.round((suggested[k]||0)*100)+'%'}</td>
         ${canEdit?`<td class="n"><input type="number" min="0" max="100" step="1" class="split-pct" data-chan="${k}" value="${Math.round((current[k]||0)*100)}"></td>`:''}</tr>`).join('')}</tbody>
@@ -1822,6 +1859,10 @@ function renderSplitSuggestion(){
     <p class="split-note">${changed
       ? `Marketplace promo period active in ${esc(meta.k)} — shifted share from Google/Meta toward Shopee/TikTok.`
       : `No marketplace promo period tagged for ${esc(meta.k)} — suggestion matches the authored plan.`}</p>
+    ${strained.length ? `<p class="split-note" style="color:var(--red)">${strained.map(k=>esc(CHAN_META[k].name)).join(' and ')}
+        ${strained.length===1?'is':'are'} taking ${strained.length===1?'a meaningful share':'meaningful shares'} of this budget while its Brand pulse
+        site-audit health score is 3/5 or lower — fix the listed blocker before pushing more spend there.
+        <button class="btn-line sm" data-nav="brandpulse" style="margin-left:6px">Open Brand pulse — Site audit</button></p>` : ''}
     ${canEdit ? `<div class="split-edit-row">
         <button class="btn-line sm" id="applySplitBtn" ${changed?'':'disabled'}>Apply suggested split</button>
         <button class="btn-solid sm" id="saveCustomSplitBtn">Save custom split</button>
@@ -2947,6 +2988,7 @@ function renderTeamDashMedia(i, meta){
     <div class="td-step"><span class="step-chip">1</span><b>Product pricing</b>
       <div class="tb-wrap"><table class="tb sm"><tbody>${S.skus.map(s =>
         `<tr><td>${esc(s.name)}</td><td class="n">${cur(s.sale)}</td></tr>`).join('')}</tbody></table></div>
+      <button class="btn-line sm" data-nav="pricing">Open Pricing</button>
     </div>
     <div class="td-step"><span class="step-chip">2</span><b>Set promo period — ${esc(meta.label)}</b>
       <select id="tdPromoSel">
@@ -2954,12 +2996,14 @@ function renderTeamDashMedia(i, meta){
         ${PROMO_PERIODS.map(p => `<option value="${p.k}"${activeKey===p.k?' selected':''}>${esc(p.name)}</option>`).join('')}
       </select>
     </div>
-    <div class="td-step"><span class="step-chip">3</span><b>New price (Shopify lead)</b>
+    <div class="td-step"><span class="step-chip">3</span><b>New price vs. floor (Shopify lead)</b>
       <div class="tb-wrap"><table class="tb sm"><tbody>${S.skus.map(s => {
         const price = Math.round(s.msrp * (1 - discPct/100) * 100) / 100;
-        const ok = price >= floorOf(s, 'shopify');
+        const fl = floorOf(s, 'shopify');
+        const ok = price >= fl;
         return `<tr><td>${esc(s.name)}</td><td class="n">${cur(price)}</td>
-          <td>${ok?`<span class="pill p-g">clears floor</span>`:`<span class="pill p-r">below floor</span>`}</td></tr>`;
+          <td class="n" style="color:var(--faint)">floor ${cur(fl)}</td>
+          <td>${ok?`<span class="pill p-g">clears</span>`:`<span class="pill p-r">below</span>`}</td></tr>`;
       }).join('')}</tbody></table></div>
     </div>
     <div class="td-step"><span class="step-chip">4</span><b>Schedule</b>
@@ -2987,10 +3031,11 @@ function renderTeamDashKol(i, meta){
   box.innerHTML = `
     <div class="td-step"><span class="step-chip">1</span><b>Budget available — ${esc(d.month)}</b>
       <div class="pay-summary" style="grid-template-columns:repeat(3,1fr)">
-        <div class="pay-tile"><span>KOL budget</span><b>${esc(c)}${Math.round(d.pool).toLocaleString()}</b></div>
+        <div class="pay-tile"><span>KOL budget (click to edit)</span><b>${esc(c)}<span class="ed" contenteditable="true" id="tdKolBudget">${Math.round(d.pool).toLocaleString()}</span></b></div>
         <div class="pay-tile"><span>Committed</span><b>${esc(c)}${Math.round(d.committed).toLocaleString()}</b></div>
         <div class="pay-tile ${over?'over':'tot'}"><span>${over?'Over budget':'Headroom'}</span><b>${esc(c)}${Math.round(Math.abs(d.diff)).toLocaleString()}</b></div>
       </div>
+      <button class="btn-line sm" data-nav="kol" data-kolstage="budget">Open KOL hub — Budget &amp; spend</button>
     </div>
     <div class="td-step"><span class="step-chip">2</span><b>Creators for this campaign (${list.length})</b>
       ${list.length ? `<div class="tb-wrap"><table class="tb sm"><tbody>${list.slice(0,8).map(k => `<tr>
@@ -3009,6 +3054,24 @@ function renderTeamDashKol(i, meta){
       <p class="fh">Book each creator's deliverable date — it feeds straight into the calendar below.</p>
       <button class="btn-line sm" data-nav="kol" data-kolstage="schedule">Open KOL hub — Schedule</button>
     </div>`;
+
+  const budgetEl = el('tdKolBudget');
+  if(budgetEl) budgetEl.addEventListener('blur', () => {
+    const raw = budgetEl.textContent.trim();
+    const val = num(raw);
+    if(raw && val === 0 && raw !== '0'){
+      toast(`"${raw}" doesn't look like a number — budget was not saved`);
+      budgetEl.textContent = Math.round(d.pool).toLocaleString();
+      return;
+    }
+    if(typeof applyChannelDollarEdit === 'function' && applyChannelDollarEdit(meta.k, 'kol', val)){
+      save(); renderAll();
+      toast(`KOL budget for ${meta.label} set to ${c}${Math.round(val).toLocaleString()}`);
+    } else {
+      toast('Set a monthly budget in Media plan before editing the KOL split');
+      budgetEl.textContent = Math.round(d.pool).toLocaleString();
+    }
+  });
 }
 
 function renderTeamDashCalendar(){

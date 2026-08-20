@@ -539,6 +539,45 @@ function renderShopfrontNote(rows){
    Shopify clears fine. Apply writes the result into Live shopfront
    pricing above; nothing here retags a month or touches channel-split
    suggestions in Media plan. */
+/* Marketplace mega-sale/flash mechanics get algorithmic in-platform push
+   during their window — the same reasoning recommendSplit() (app.js)
+   already uses to shift channel share toward Shopee/TikTok when one of
+   these is tagged active. Reused here rather than re-derived, so the two
+   "which promo converts better" signals in this app can't disagree. */
+const MARKETPLACE_PROMO_KEYS = ['flash','9.9','10.10','11.11','12.12'];
+
+function renderPromoComparison(){
+  const box = el('promoComparison'); if(!box) return;
+  const rows = PROMO_PERIODS.map(p => {
+    const pct = (S.settings.promoDiscounts||{})[p.k] != null ? S.settings.promoDiscounts[p.k] : p.discountPct;
+    const boosted = MARKETPLACE_PROMO_KEYS.includes(p.k);
+    let unsafe = [];
+    S.skus.forEach(s => {
+      const price = Math.round(s.msrp * (1 - pct/100) * 100) / 100;
+      SHOPFRONT_PLATFORMS.forEach(pl => { if(price < floorOf(s, pl.k)) unsafe.push(s.name + ' × ' + pl.name); });
+    });
+    return { p, pct, boosted, unsafe };
+  });
+
+  box.innerHTML = `<div class="tb-wrap"><table class="tb">
+    <thead><tr><th>Period</th><th class="n">Discount</th><th>In-platform push</th><th>Floor-safe at this discount</th><th>Mechanic</th></tr></thead>
+    <tbody>${rows.map(r => `<tr>
+      <td><b>${esc(r.p.name)}</b></td>
+      <td class="n">${r.pct}%</td>
+      <td>${r.boosted
+        ? `<span class="pill p-g">Marketplace-boosted</span>`
+        : `<span class="pill p-n">Baseline reach only</span>`}</td>
+      <td>${r.unsafe.length
+        ? `<span class="pill p-r">${r.unsafe.length} combo${r.unsafe.length===1?'':'s'} below floor</span>`
+        : `<span class="pill p-g">All clear</span>`}</td>
+      <td style="font-size:12.5px;color:var(--mute)">${esc(r.p.mechanicNote)}</td>
+    </tr>`).join('')}</tbody>
+  </table></div>
+  <p class="fh" style="margin-top:10px">"Marketplace-boosted" periods (flash, 9.9, 10.10, 11.11, 12.12) get algorithmic in-platform push during
+    their window — the same reasoning Media plan's channel-split suggestion uses. That's a real mechanic, not a sales-lift prediction —
+    it doesn't override the floor-safety column, which is what actually decides whether a given discount is safe to run.</p>`;
+}
+
 let selectedPromo = 'bau';
 let selectedPromoManual = false;
 

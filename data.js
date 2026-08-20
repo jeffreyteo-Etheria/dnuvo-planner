@@ -205,23 +205,31 @@ function targetRoasFor(monthIndex){
   return ramp[monthIndex] != null ? ramp[monthIndex] : ramp[ramp.length-1];
 }
 
-/* ── Phases ── */
+/* ── Phases — four, matching the actual shape of the plan: proof, then
+   revenue, then real-world event participation, then what comes after
+   the 6-month SG plan (MY/TH). Phase 4 isn't bound to an M-number since
+   it starts once SG is done, not on a fixed calendar slot. ── */
 const PHASES = [
-  { n:1, name:'Build trust', months:'M1–M2', tag:'p-g',
+  { n:1, name:'Build trust & brand proof', months:'M1–M2', tag:'p-g',
     focus:'Reviews and proof',
     doing:'Gift 20+ nano creators. Collect 50 reviews across Shopee and TikTok Shop. Post three times a week. Always-on voucher live. No paid ads at all.',
     roas:'Organic only',
     gate:'50 reviews on the hero SKU and a 4.7★ shop rating' },
-  { n:2, name:'Activate paid', months:'M3–M4', tag:'p-v',
-    focus:'Two channels, proven',
-    doing:'TikTok video ads and Shopee search ads go live. Google Shopping added in M3. First mega sale. Two to three paid micro-creator posts a month.',
+  { n:2, name:'Sales & revenue', months:'M3–M4', tag:'p-v',
+    focus:'Activate paid channels toward the revenue goal',
+    doing:'TikTok video ads and Shopee search ads go live. Google Shopping added in M3. First mega sale (11.11). Two to three paid micro-creator posts a month.',
     roas:'1.5 – 2.0× blended',
     gate:'Blended 1.5× sustained across two weeks' },
-  { n:3, name:'Scale and events', months:'M5–M6', tag:'p-a',
-    focus:'Volume and sell-through',
-    doing:'Meta retargeting opens. Market pop-up. 11.11 at maximum budget. Beauty fair in December. Clear remaining stock.',
+  { n:3, name:'Event participation', months:'M5–M6', tag:'p-a',
+    focus:'Market pop-up, beauty fair, sampling',
+    doing:'Market pop-up in M5. Beauty fair booth in December. Pharmacy sampling M4–M5. Meta retargeting opens to support foot-traffic follow-up. Clear remaining stock.',
     roas:'2.0×+ blended',
-    gate:'All units sold by 31 December' }
+    gate:'All units sold by 31 December' },
+  { n:4, name:'MY/TH expansion', months:'Post-M6', tag:'p-n',
+    focus:'Malaysia and Thailand market entry',
+    doing:'Regulatory path (NPRA / Thai FDA notification), distributor candidates and SKU fit — see the MY/TH expansion module. Researched and sourced, not yet a committed plan.',
+    roas:'Not yet modeled',
+    gate:'SG 6-month plan complete and all units sold' }
 ];
 
 const RULES = [

@@ -96,7 +96,7 @@
     <nav class="side-nav" id="sideNav">
       <div class="nav-group">Plan</div>
       <button class="nav-i"      data-view="teamdash" data-acl="all">Team dashboard</button>
-      <button class="nav-i on"   data-view="overview" data-acl="all">Overview</button>
+      <button class="nav-i on"   data-view="overview" data-acl="all">Roles</button>
       <button class="nav-i"      data-view="strategy" data-acl="all">Strategy</button>
       <button class="nav-i"      data-view="brandpulse" data-acl="all">Brand pulse</button>
       <button class="nav-i"      data-view="pricing"  data-acl="all">Pricing</button>
@@ -106,7 +106,7 @@
 
       <div class="nav-group">Execute</div>
       <button class="nav-i"      data-view="kol"      data-acl="all">KOL hub</button>
-      <button class="nav-i"      data-view="content"  data-acl="all">Content</button>
+      <button class="nav-i"      data-view="content"  data-acl="all">Brand Personas</button>
       <button class="nav-i"      data-view="events"   data-acl="all">Events</button>
       <button class="nav-i"      data-view="calendar" data-acl="all">6-month calendar</button>
 
@@ -401,6 +401,14 @@
 
       <div class="panel">
         <div class="p-h">
+          <h3>Promo strategy match-up</h3>
+          <span class="p-note">every mechanic side by side — which period actually earns extra in-platform reach, not just a deeper discount</span>
+        </div>
+        <div id="promoComparison"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h">
           <h3>Promo pricing</h3>
           <span class="p-note">pick a promo strategy — Shopify sets the lead price, every other channel is checked against its own floor</span>
         </div>
@@ -445,6 +453,8 @@
           </div>
           <button class="btn-solid sm" id="budgetSaveBtn">Save for everyone</button>
         </div>
+        <label class="sync-auto" style="margin-bottom:12px"><input type="checkbox" id="showMyBudgetToggle">
+          <span>Show Malaysia market rows (hidden by default — MY hasn't launched yet)</span></label>
         <div class="hint-bar" id="budgetSyncStatus"></div>
         <div class="tb-wrap"><table class="tb" id="budgetTable"></table></div>
         <div class="hint-bar" id="monthKpiFocus" hidden></div>
@@ -783,7 +793,7 @@
 
         <div class="panel">
           <div class="p-h"><h3>Weekly audit</h3>
-            <span class="p-note">every creator, grouped by where they actually are — contacted/proposed, scheduled, confirmed, or delivered to date</span></div>
+            <span class="p-note">scheduled, confirmed and delivered only — pre-outreach status lives on the Creators pipeline filter instead</span></div>
           <div id="kolWeeklyAudit"></div>
         </div>
 

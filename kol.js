@@ -255,16 +255,16 @@ function profileUrl(k){
 function looksLikeFollowerCount(handle){
   return /^[\d,.]+[kKmM]?$/.test(String(handle || '').replace(/^@+/, '').trim());
 }
-/* Mirrors the reference workflow's own gated sequence (sourcing → content →
-   budget → calendar → actuals) condensed to 5 steps: budget/spend gets its
-   own stage ahead of scheduling — instead of buried inside KPI or repeated
-   as a mini-summary on Schedule — and Confirmation foregrounds the weekly
-   audit's confirmed→completed tracking rather than mixing it with fee/GPM
+/* Budget & spend leads — the money picture is what a team member checks
+   first, before sourcing or briefing. Mirrors the reference workflow's own
+   gated sequence otherwise (content → budget → calendar → actuals),
+   condensed to 5 steps: Confirmation foregrounds the weekly audit's
+   confirmed→completed tracking rather than mixing it with fee/GPM
    benchmarking. */
 const KOL_STAGE_TABS = [
+  { k:'budget',   name:'Budget & spend', desc:'Plan the pool, commit named spend' },
   { k:'creators', name:'Creators',      desc:'Source, verify, select' },
   { k:'content',  name:'Content',       desc:'Brief and coordinate' },
-  { k:'budget',   name:'Budget & spend', desc:'Plan the pool, commit named spend' },
   { k:'schedule', name:'Schedule',      desc:'Book and deliver' },
   { k:'confirm',  name:'Confirmation',  desc:'Weekly audit — confirm what shipped' }
 ];
@@ -2088,13 +2088,31 @@ function renderKolBudgetDrilldown(){
     </div>
     ${d.entries.length
       ? `<div class="tb-wrap"><table class="tb">
-          <thead><tr><th>Creator</th><th>Deliverable</th><th class="n">Fee</th><th class="n">Commission (GMV)</th><th class="n">Total spend</th></tr></thead>
+          <thead><tr><th>Creator</th><th>Deliverable</th><th class="n">Fee (payout)</th><th class="n">Commission (GMV)</th><th class="n">Total spend</th><th>Payment</th></tr></thead>
           <tbody>${d.entries.map(e => `<tr><td>${esc(e.kol)}</td><td>${esc(e.what)}</td>
-            <td class="n">${esc(c)}${(e.feeAgreed||0).toLocaleString()}</td>
+            <td class="n">${esc(c)}<span class="ed" contenteditable="true" data-bddfee="${e.id}">${(e.feeAgreed||0).toLocaleString()}</span></td>
             <td class="n">${e.gmv?esc(c)+Math.round(commissionSpendFor(e)).toLocaleString():'<span class="nv">—</span>'}</td>
-            <td class="n"><b>${esc(c)}${Math.round(spendFor(e)).toLocaleString()}</b></td></tr>`).join('')}</tbody>
+            <td class="n"><b>${esc(c)}${Math.round(spendFor(e)).toLocaleString()}</b></td>
+            <td>${payCell(e)}</td></tr>`).join('')}</tbody>
         </table></div>`
       : `<p class="empty">No deliverables scheduled in ${esc(d.month)} yet.</p>`}`;
+
+  qsa('[data-bddfee]', box).forEach(c => c.addEventListener('blur', () => {
+    const e = (S.schedule||[]).find(x => x.id === c.dataset.bddfee);
+    if(!e) return;
+    const raw = c.textContent.trim();
+    if(raw && num(raw) === 0 && raw !== '0'){
+      toast(`"${raw}" doesn't look like a number — fee was not saved`);
+      c.textContent = (e.feeAgreed||0).toLocaleString();
+      return;
+    }
+    e.feeAgreed = num(raw); e.updatedAt = new Date().toISOString();
+    save(); renderKolBudgetDrilldown();
+  }));
+  qsa('[data-pay]', box).forEach(s => s.addEventListener('change', () => {
+    const e = (S.schedule||[]).find(x => x.id === s.dataset.pay);
+    if(e){ e.paidStatus = s.value; e.updatedAt = new Date().toISOString(); save(); renderKolBudgetDrilldown(); }
+  }));
 }
 
 /* ── weekly audit — the whole roster grouped by where it actually sits,
@@ -2112,8 +2130,10 @@ function renderKolWeeklyAudit(){
   const all = S.kols || [];
   const sched = S.schedule || [];
 
-  const contacted = all.filter(k => k.stage === 'contacted' || k.stage === 'negotiating')
-    .sort((a,b) => (b.updatedAt||'').localeCompare(a.updatedAt||''));
+  // Contacted/proposed used to have its own section here, but Confirmation
+  // is meant to be scheduled-or-later only — pre-outreach status still
+  // lives on the Creators tab's own pipeline filter, just not duplicated
+  // in this weekly-review surface.
   const planned = sched.filter(e => schedBoardOf(e) === 'planned');
   const confirmed = sched.filter(e => ['confirmed','live'].includes(schedBoardOf(e)));
   const deliveredSched = sched.filter(e => schedBoardOf(e) === 'done');
@@ -2138,15 +2158,6 @@ function renderKolWeeklyAudit(){
   </div>`;
 
   const kolLink = k => k.introLink || k.source || '';
-
-  const contactedBody = contacted.length ? `<div class="tb-wrap"><table class="tb">
-      <thead><tr><th>Creator</th><th>Stage</th><th>Intro/source link</th><th>Notes</th><th class="n">Updated</th></tr></thead>
-      <tbody>${contacted.map(k => `<tr><td><b>${esc(k.handle)}</b> ${kolTypePill(k)}</td>
-        <td>${esc((KOL_PIPE.find(s=>s.k===k.stage)||{}).name||k.stage)}</td>
-        <td>${kolLink(k)?`<a href="${esc(kolLink(k))}" target="_blank" rel="noopener" class="k-handle-link">Open</a>`:'<span class="nv">not verified</span>'}</td>
-        <td style="font-size:12px;color:var(--mute)">${esc((k.notes||'').slice(0,80))}${(k.notes||'').length>80?'...':''}</td>
-        <td class="n" style="font-size:11.5px;color:var(--faint)">${esc((k.updatedAt||'').slice(0,10))}</td></tr>`).join('')}</tbody>
-    </table></div>` : `<p class="empty">Nothing contacted or under negotiation right now.</p>`;
 
   const schedRow = e => { const k = all.find(x=>x.handle===e.kol); return `<tr>
     <td><b>${esc(e.kol)}</b> ${k?kolTypePill(k):''}</td>
@@ -2194,7 +2205,6 @@ function renderKolWeeklyAudit(){
     </table></div>` : `<p class="empty">Nothing delivered yet.</p>`;
 
   box.innerHTML =
-    section(`Contacted / proposed (${contacted.length})`, 'pre-schedule outreach — no budget committed yet', contactedBody) +
     section(`Scheduled (${planned.length})`, 'booked, not yet confirmed', plannedBody, planned.length?spendTotal(planned):null) +
     section(`Confirmed (${confirmed.length})`, 'terms locked and/or live now — this is the number that matters most for a weekly review', confirmedBody, confirmed.length?spendTotal(confirmed):null) +
     section(`Completed / delivered to date (${delivered.length})`, 'proof on file where verified — rows flagged ⚠ are marked complete without a proof link', deliveredBody, delivered.length?deliveredSpendTotal:null);
