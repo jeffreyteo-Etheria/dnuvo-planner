@@ -259,6 +259,7 @@ el('signOut').addEventListener('click', () => location.reload());
 
 /* ═══════════ NAV ═══════════ */
 const VIEW_META = {
+  teamdash :['Team dashboard','The goal, the plan, the budget — then four steps to run it.'],
   overview :['Overview','Where the launch stands today.'],
   strategy :['Strategy','Positioning, phases and the rules that hold them.'],
   brandpulse:['Brand pulse','Competitor intelligence, personas, and site audit alignment.'],
@@ -288,8 +289,23 @@ function go(v){
   // push a refresh here. Recompute on arrival instead of chasing every
   // upstream save() call across three files.
   if(v === 'calendar' && typeof renderCalendar === 'function') renderCalendar();
+  if(v === 'teamdash' && typeof renderTeamDash === 'function') renderTeamDash();
 }
 qsa('.nav-i').forEach(b => b.addEventListener('click', () => go(b.dataset.view)));
+
+/* Team dashboard's step buttons deep-link into the exact right place —
+   not just the nav view but, for KOL hub, the internal stage tab too
+   (kolStage is a plain module-level var in kol.js, same trust model as
+   every other cross-file variable in this non-module script setup). */
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-nav]');
+  if(!b) return;
+  if(b.dataset.kolstage && typeof kolStage !== 'undefined'){
+    kolStage = b.dataset.kolstage;
+    if(typeof renderKol === 'function') renderKol();
+  }
+  go(b.dataset.nav);
+});
 el('printBtn').addEventListener('click', () => window.print());
 
 /* ═══════════ GATE RAIL (signature) ═══════════ */
@@ -2800,6 +2816,34 @@ function eventForm(){
 const addEventBtn = el('addEvent');
 if(addEventBtn) addEventBtn.addEventListener('click', eventForm);
 
+/* One overview row per month: real logged activity, not just the
+   authored plan narrative — media spend from computeBudget(), KOL
+   Live/UGC from S.schedule (bucketed by monthDateRange, kol.js), brand
+   Events from S.events, and the actual promo tag from Campaign setup.
+   Shared by the full 6-month calendar and the Team dashboard's condensed
+   version so the two can never quietly drift apart. */
+function monthActivityFor(i){
+  const range = (typeof monthDateRange === 'function') ? monthDateRange(i) : null;
+  if(!range) return { live:[], ugc:[], events:[] };
+  const inRange = d => !!d && d >= range.start && d < range.end;
+  return {
+    live: (S.schedule||[]).filter(e => e.type==='live' && inRange(e.date)),
+    ugc: (S.schedule||[]).filter(e => e.type==='ugc' && inRange(e.date)),
+    events: (S.events||[]).filter(e => inRange(e.date))
+  };
+}
+function promoTagForMonth(m){
+  const entry = Object.entries(S.settings.promoPeriods||{}).find(([k,cfg]) => cfg.active && cfg.month === m.k);
+  if(!entry) return null;
+  const p = PROMO_PERIODS.find(x=>x.k===entry[0]);
+  return p ? p.name : entry[0];
+}
+function monthOverviewCell(items, nameFn){
+  if(!items.length) return '<span class="nv">none logged</span>';
+  const names = items.slice(0,3).map(nameFn).join(', ');
+  return `<b>${items.length}</b> <span class="sub">${esc(names)}${items.length>3?'…':''}</span>`;
+}
+
 function renderCalendar(){
   const B = computeBudget();
 
@@ -2819,45 +2863,17 @@ function renderCalendar(){
       : `<p class="empty">No promo periods marked active yet — set them in Campaign setup, at the top of the Strategy view.</p>`;
   }
 
-  /* One overview row per month: real logged activity, not just the
-     authored plan narrative — media spend from computeBudget(), KOL
-     Live/UGC from S.schedule (bucketed by monthDateRange, kol.js),
-     brand Events from S.events, and the actual promo tag from Campaign
-     setup rather than the static plan copy. The authored plan line
-     stays as a faint sub-note so the "what was supposed to happen" isn't
-     lost next to "what's actually logged". */
-  const monthActivity = i => {
-    const range = (typeof monthDateRange === 'function') ? monthDateRange(i) : null;
-    if(!range) return { live:[], ugc:[], events:[] };
-    const inRange = d => !!d && d >= range.start && d < range.end;
-    return {
-      live: (S.schedule||[]).filter(e => e.type==='live' && inRange(e.date)),
-      ugc: (S.schedule||[]).filter(e => e.type==='ugc' && inRange(e.date)),
-      events: (S.events||[]).filter(e => inRange(e.date))
-    };
-  };
-  const listCell = (items, nameFn) => {
-    if(!items.length) return '<span class="nv">none logged</span>';
-    const names = items.slice(0,3).map(nameFn).join(', ');
-    return `<b>${items.length}</b> <span class="sub">${esc(names)}${items.length>3?'…':''}</span>`;
-  };
-  const promoForMonth = m => {
-    const entry = Object.entries(S.settings.promoPeriods||{}).find(([k,cfg]) => cfg.active && cfg.month === m.k);
-    if(!entry) return '<span class="nv">none tagged</span>';
-    const p = PROMO_PERIODS.find(x=>x.k===entry[0]);
-    return esc(p ? p.name : entry[0]);
-  };
-
   el('calTable').innerHTML = `<thead><tr><th>Month</th><th class="n">Media spend</th><th>KOL Live</th>
       <th>Content (UGC)</th><th>Events</th><th>Promotion</th><th class="n">Units</th></tr></thead><tbody>` +
     MONTHS.map((m,i) => {
-      const a = monthActivity(i);
+      const a = monthActivityFor(i);
+      const promo = promoTagForMonth(m);
       return `<tr><td><b>${esc(m.label)}</b><span class="sub">${esc(m.media)}</span></td>
       <td class="n">${cur(B[i].budget)}</td>
-      <td>${listCell(a.live, e=>e.kol)}</td>
-      <td>${listCell(a.ugc, e=>e.kol)}</td>
-      <td>${listCell(a.events, e=>e.name)}</td>
-      <td>${promoForMonth(m)}</td>
+      <td>${monthOverviewCell(a.live, e=>e.kol)}</td>
+      <td>${monthOverviewCell(a.ugc, e=>e.kol)}</td>
+      <td>${monthOverviewCell(a.events, e=>e.name)}</td>
+      <td>${promo?esc(promo):'<span class="nv">none tagged</span>'}</td>
       <td class="n">${B[i].units}</td></tr>`;
     }).join('') +
     `<tr class="tot"><td>Total</td><td class="n">${cur(B.reduce((a,b)=>a+b.budget,0))}</td>
@@ -2873,6 +2889,154 @@ function renderCalendar(){
   qsa('[data-ck]').forEach(c => c.addEventListener('change', () => {
     S.checks[c.dataset.ck] = c.checked; save();
   }));
+}
+
+/* ═══════════ TEAM DASHBOARD ═══════════
+   A single-page, low-text landing view for the team role — the rest of
+   the app stays exactly as it was (admin still lands on Overview), this
+   is a guide-and-launch surface: a real number for every step, one
+   button that takes you to the exact right place to act on it. Nothing
+   here is a new data model — every figure is the same computeBudget(),
+   kolBudgetDrilldown(), warmthOf() and monthActivityFor() the rest of
+   the app already uses, just fewer words around it. */
+function renderTeamDash(){
+  const snap = el('tdSnapshot'); if(!snap) return;
+
+  const B = computeBudget();
+  const tU = B.reduce((a,b)=>a+b.units,0), goal = S.settings.goalUnits;
+  const tB = B.reduce((a,b)=>a+b.budget,0);
+  const openGates = GATES.filter(g => (S.gates[g.id]||0) >= g.target).length;
+  const activeMonth = Number.isInteger(S.mediaFocus) ? S.mediaFocus : 0;
+  const meta = MONTHS[activeMonth];
+
+  snap.innerHTML = `<div class="kpis k4">
+      <div class="kpi"><div class="kpi-l">Goal</div><div class="kpi-v">${tU.toLocaleString()}/${goal.toLocaleString()}</div><div class="kpi-s">units planned vs goal</div></div>
+      <div class="kpi"><div class="kpi-l">Budget</div><div class="kpi-v">${cur(tB)}</div><div class="kpi-s">6-month media total</div></div>
+      <div class="kpi"><div class="kpi-l">Gates open</div><div class="kpi-v">${openGates}/${GATES.length}</div><div class="kpi-s">launch readiness</div></div>
+      <div class="kpi"><div class="kpi-l">Creators</div><div class="kpi-v">${S.kols.length}</div><div class="kpi-s">${S.kols.filter(k=>k.stage==='done').length} complete</div></div>
+    </div>
+    <div class="month-focus" id="tdMonthFocus" style="margin-top:14px"></div>`;
+
+  const mf = el('tdMonthFocus');
+  mf.innerHTML = MONTHS.map((m,i) => `<button class="mf-btn ${i===activeMonth?'on':''}" data-tdmf="${i}">${esc(m.k)}<span>${esc(m.label)}</span></button>`).join('');
+  qsa('[data-tdmf]', mf).forEach(b => b.addEventListener('click', () => {
+    S.mediaFocus = +b.dataset.tdmf;
+    save();
+    renderTeamDash();
+    if(typeof renderMedia === 'function') renderMedia();
+    if(typeof renderKolBudgetDrilldown === 'function') renderKolBudgetDrilldown();
+  }));
+
+  renderTeamDashMedia(activeMonth, meta);
+  renderTeamDashKol(activeMonth, meta);
+  renderTeamDashCalendar();
+  renderTeamDashEventWindows();
+}
+
+function renderTeamDashMedia(i, meta){
+  const box = el('tdMediaFlow'); if(!box) return;
+  S.settings.promoPeriods = S.settings.promoPeriods || {};
+  S.settings.promoDiscounts = S.settings.promoDiscounts || {};
+  const activeEntry = Object.entries(S.settings.promoPeriods).find(([k,cfg]) => cfg && cfg.active && cfg.month === meta.k);
+  const activeKey = activeEntry ? activeEntry[0] : '';
+  const discPct = activeKey
+    ? ((S.settings.promoDiscounts[activeKey] != null) ? S.settings.promoDiscounts[activeKey] : (PROMO_PERIODS.find(p=>p.k===activeKey)||{}).discountPct || 0)
+    : 0;
+
+  box.innerHTML = `
+    <div class="td-step"><span class="step-chip">1</span><b>Product pricing</b>
+      <div class="tb-wrap"><table class="tb sm"><tbody>${S.skus.map(s =>
+        `<tr><td>${esc(s.name)}</td><td class="n">${cur(s.sale)}</td></tr>`).join('')}</tbody></table></div>
+    </div>
+    <div class="td-step"><span class="step-chip">2</span><b>Set promo period — ${esc(meta.label)}</b>
+      <select id="tdPromoSel">
+        <option value="">No promo — full price</option>
+        ${PROMO_PERIODS.map(p => `<option value="${p.k}"${activeKey===p.k?' selected':''}>${esc(p.name)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="td-step"><span class="step-chip">3</span><b>New price (Shopify lead)</b>
+      <div class="tb-wrap"><table class="tb sm"><tbody>${S.skus.map(s => {
+        const price = Math.round(s.msrp * (1 - discPct/100) * 100) / 100;
+        const ok = price >= floorOf(s, 'shopify');
+        return `<tr><td>${esc(s.name)}</td><td class="n">${cur(price)}</td>
+          <td>${ok?`<span class="pill p-g">clears floor</span>`:`<span class="pill p-r">below floor</span>`}</td></tr>`;
+      }).join('')}</tbody></table></div>
+    </div>
+    <div class="td-step"><span class="step-chip">4</span><b>Schedule</b>
+      <p class="fh">${activeKey ? `${esc((PROMO_PERIODS.find(p=>p.k===activeKey)||{}).name)} is tagged for ${esc(meta.label)} — it's on the calendar below.` : 'Pick a promo period above to put it on the calendar.'}</p>
+      <button class="btn-line sm" data-nav="calendar">View on calendar</button>
+    </div>`;
+
+  const sel = el('tdPromoSel');
+  if(sel) sel.addEventListener('change', () => {
+    const newKey = sel.value;
+    if(activeKey && S.settings.promoPeriods[activeKey]) S.settings.promoPeriods[activeKey].active = false;
+    if(newKey) S.settings.promoPeriods[newKey] = { active:true, month: meta.k };
+    save(); renderAll();
+    toast(newKey ? `${(PROMO_PERIODS.find(p=>p.k===newKey)||{}).name} tagged for ${meta.label}` : `Promo cleared for ${meta.label}`);
+  });
+}
+
+function renderTeamDashKol(i, meta){
+  const box = el('tdKolFlow'); if(!box) return;
+  const d = (typeof kolBudgetDrilldown === 'function') ? kolBudgetDrilldown(i) : { month:meta.label, pool:0, committed:0, diff:0 };
+  const c = S.settings.cur;
+  const over = d.diff < 0;
+  const list = (S.kols||[]).filter(k => typeof warmthOf === 'function' && ['confirmed','completed'].includes(warmthOf(k)));
+
+  box.innerHTML = `
+    <div class="td-step"><span class="step-chip">1</span><b>Budget available — ${esc(d.month)}</b>
+      <div class="pay-summary" style="grid-template-columns:repeat(3,1fr)">
+        <div class="pay-tile"><span>KOL budget</span><b>${esc(c)}${Math.round(d.pool).toLocaleString()}</b></div>
+        <div class="pay-tile"><span>Committed</span><b>${esc(c)}${Math.round(d.committed).toLocaleString()}</b></div>
+        <div class="pay-tile ${over?'over':'tot'}"><span>${over?'Over budget':'Headroom'}</span><b>${esc(c)}${Math.round(Math.abs(d.diff)).toLocaleString()}</b></div>
+      </div>
+    </div>
+    <div class="td-step"><span class="step-chip">2</span><b>Creators for this campaign (${list.length})</b>
+      ${list.length ? `<div class="tb-wrap"><table class="tb sm"><tbody>${list.slice(0,8).map(k => `<tr>
+          <td><b>${esc(k.handle)}</b></td>
+          <td>${typeof kolTypePill==='function'?kolTypePill(k):esc(k.type||'ugc')}</td>
+          <td>${esc((KOL_PIPE.find(s=>s.k===k.stage)||{}).name||k.stage)}</td></tr>`).join('')}</tbody></table></div>
+        ${list.length>8?`<p class="fh">+${list.length-8} more on the roster.</p>`:''}`
+        : `<p class="empty">No confirmed creators yet.</p>`}
+      <button class="btn-line sm" data-nav="kol" data-kolstage="creators">Open KOL hub — Creators</button>
+    </div>
+    <div class="td-step"><span class="step-chip">3</span><b>Contact messaging</b>
+      <p class="fh">Send outreach or check-in messages — templates and send routes are already set up in KOL hub's Content tab.</p>
+      <button class="btn-line sm" data-nav="kol" data-kolstage="content">Open KOL hub — Content</button>
+    </div>
+    <div class="td-step"><span class="step-chip">4</span><b>Schedule (UGC / Livestream)</b>
+      <p class="fh">Book each creator's deliverable date — it feeds straight into the calendar below.</p>
+      <button class="btn-line sm" data-nav="kol" data-kolstage="schedule">Open KOL hub — Schedule</button>
+    </div>`;
+}
+
+function renderTeamDashCalendar(){
+  const box = el('tdCalendar'); if(!box) return;
+  const B = computeBudget();
+  box.innerHTML = `<div class="tb-wrap"><table class="tb sm">
+    <thead><tr><th>Month</th><th>Promotion</th><th>KOL confirmed</th><th>Events</th><th class="n">Media spend</th></tr></thead>
+    <tbody>${MONTHS.map((m,i) => {
+      const a = monthActivityFor(i);
+      const kolCount = a.live.length + a.ugc.length;
+      return `<tr><td><b>${esc(m.label)}</b></td>
+        <td>${promoTagForMonth(m) ? esc(promoTagForMonth(m)) : '<span class="nv">—</span>'}</td>
+        <td>${kolCount ? `<b>${kolCount}</b> <span class="sub">${a.live.length} live · ${a.ugc.length} UGC</span>` : '<span class="nv">none</span>'}</td>
+        <td>${a.events.length ? `<b>${a.events.length}</b>` : '<span class="nv">none</span>'}</td>
+        <td class="n">${cur(B[i].budget)}</td></tr>`;
+    }).join('')}</tbody>
+  </table></div>
+  <button class="btn-line sm" style="margin-top:10px" data-nav="calendar">Open full 6-month calendar</button>`;
+}
+
+function renderTeamDashEventWindows(){
+  const box = el('tdEventWindows'); if(!box) return;
+  box.innerHTML = `<div class="tb-wrap"><table class="tb sm">
+    <thead><tr><th>Month</th><th>Focus</th><th>Channel</th><th>Mechanic</th></tr></thead>
+    <tbody>${RETAIL_EVENT_WINDOWS.map(r => `<tr>
+      <td><b>${esc(r.month)}</b></td><td>${esc(r.focus)}</td><td>${esc(r.channel)}</td><td>${esc(r.mechanic)}</td></tr>`).join('')}</tbody>
+  </table></div>
+  <button class="btn-line sm" style="margin-top:10px" data-nav="events">Open Events — add one to the calendar</button>`;
 }
 
 /* ═══════════ APPROVALS ═══════════ */
@@ -3051,6 +3215,7 @@ el('restoreFile').addEventListener('change', e => {
 function renderAll(){
   renderRail(); renderOverview(); renderStrategy(); renderPricing();
   renderBrandPulse(); renderMedia(); renderExpansion(); renderContentModule(); renderEvents(); renderCalendar(); renderApprovals(); renderReport(); renderAiStrategy();
+  if(typeof renderTeamDash === 'function') renderTeamDash();
   if(typeof renderPersonas === 'function') renderPersonas();
   applyModuleVisibility();
   if(typeof renderProposals === 'function') renderProposals();
@@ -3058,7 +3223,7 @@ function renderAll(){
   if(typeof refreshSortable === 'function'){ refreshSortable(); injectPanelExports(); }
 }
 function boot(){
-  renderAll(); renderKol(); renderPlaybook(); go('overview');
+  renderAll(); renderKol(); renderPlaybook(); go(role === 'team' ? 'teamdash' : 'overview');
   if(typeof initConsoleUI === 'function') initConsoleUI();
 }
 

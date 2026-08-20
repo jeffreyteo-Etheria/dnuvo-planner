@@ -305,6 +305,18 @@ tr.mkt-my{border-bottom:1px solid var(--line-2)}
 .tb .ed:hover{background:var(--line-2)}
 .tb td.locked{color:var(--faint)}
 .masked{font-family:var(--m);color:var(--faint);letter-spacing:.14em}
+.tb.sm{font-size:12px}
+.tb.sm th{padding:0 10px 7px}
+.tb.sm td{padding:7px 10px}
+
+/* ── Team dashboard ── */
+.td-flow{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.td-step{border:1px solid var(--line);border-radius:var(--r);padding:13px 14px;display:flex;flex-direction:column;gap:8px}
+.td-step b{font-size:13px}
+.td-step select{margin-top:2px}
+.td-step .btn-line{margin-top:auto;align-self:flex-start}
+@media(max-width:1180px){ .td-flow{grid-template-columns:1fr 1fr} }
+@media(max-width:700px){ .td-flow{grid-template-columns:1fr} }
 
 /* ══════════ PILLS ══════════ */
 .pill{display:inline-block;font-family:var(--m);font-size:9.5px;font-weight:700;letter-spacing:.07em;

@@ -95,6 +95,7 @@
 
     <nav class="side-nav" id="sideNav">
       <div class="nav-group">Plan</div>
+      <button class="nav-i"      data-view="teamdash" data-acl="all">Team dashboard</button>
       <button class="nav-i on"   data-view="overview" data-acl="all">Overview</button>
       <button class="nav-i"      data-view="strategy" data-acl="all">Strategy</button>
       <button class="nav-i"      data-view="brandpulse" data-acl="all">Brand pulse</button>
@@ -155,6 +156,34 @@
     </div>
 
     <div class="scroll" id="scroll">
+
+    <!-- ═══════ TEAM DASHBOARD ═══════ -->
+    <section class="view" data-view="teamdash">
+      <div class="panel">
+        <div class="p-h"><h3>Campaign snapshot</h3><span class="p-note">the goal, the plan, the budget — pick a month, everything below reacts to it</span></div>
+        <div id="tdSnapshot"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Media plan</h3><span class="p-note">pricing → promo period → new price → schedule</span></div>
+        <div id="tdMediaFlow" class="td-flow"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>KOL plan</h3><span class="p-note">budget → creators → contact → schedule</span></div>
+        <div id="tdKolFlow" class="td-flow"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Calendar</h3><span class="p-note">media + KOL + events, month by month</span></div>
+        <div id="tdCalendar"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-h"><h3>Retail &amp; event windows</h3><span class="p-note">reference — add any of these to the calendar</span></div>
+        <div id="tdEventWindows"></div>
+      </div>
+    </section>
 
     <!-- ═══════ OVERVIEW ═══════ -->
     <section class="view on" data-view="overview">
